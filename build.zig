@@ -56,23 +56,23 @@ pub fn build(b: *std.Build) void {
             // codegen only runs if zig build sees a dependency on the binary output of
             // the step. So we duplicate the build definition so that it doesn't get polluted by
             // b.installArtifact.
-            const exe_check = b.addExecutable(.{
+            const lib_check = b.addSharedLibrary(.{
                 .name = "check",
-                .root_source_file = b.path("src/main.zig"),
+                .root_source_file = b.path("src/game.zig"),
                 .target = target,
                 .optimize = optimize,
             });
 
-            exe_check.linkLibrary(raylib_dep.artifact("raylib"));
-            exe_check.linkFramework("CoreVideo");
-            exe_check.linkFramework("IOKit");
-            exe_check.linkFramework("Cocoa");
-            exe_check.linkFramework("GLUT");
-            exe_check.linkFramework("OpenGL");
-            exe_check.linkLibC();
+            lib_check.linkLibrary(raylib_dep.artifact("raylib"));
+            lib_check.linkFramework("CoreVideo");
+            lib_check.linkFramework("IOKit");
+            lib_check.linkFramework("Cocoa");
+            lib_check.linkFramework("GLUT");
+            lib_check.linkFramework("OpenGL");
+            lib_check.linkLibC();
 
             const check = b.step("check", "Check if it compiles");
-            check.dependOn(&exe_check.step);
+            check.dependOn(&lib_check.step);
         }
 
         b.installArtifact(exe);

@@ -12,15 +12,15 @@ const rl = @cImport({
 //         - unload, overwrite the DLL from the temporary one, and re-load.
 // - draw the output of the compilation on-screen, maybe in a custom debug window or in-editor console.
 
-const screen_w = 800;
-const screen_h = 450;
-
 const GamePtr = *anyopaque;
 
-var init: *const fn (c_int, c_int, c_int) GamePtr = undefined;
+var init: *const fn (c_int, c_int) GamePtr = undefined;
 var reload: *const fn (GamePtr) void = undefined;
 var update: *const fn (GamePtr) void = undefined;
 var draw: *const fn (GamePtr) void = undefined;
+
+const window_width = 800;
+const window_height = 450;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -29,9 +29,9 @@ pub fn main() !void {
     const allocator = arena.allocator();
     loadGameDll() catch @panic("failed to load");
 
-    const game_state = init(screen_w, screen_h, screen_h / 5);
+    const game_state = init(window_width, window_height);
 
-    rl.InitWindow(screen_w, screen_h, "portapong");
+    rl.InitWindow(window_width, window_height, "portapong");
     rl.SetTargetFPS(20);
 
     // WindowShouldClose will return true if the user presses ESC.
