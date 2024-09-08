@@ -24,8 +24,6 @@ pub fn build(b: *std.Build) void {
     });
 
     game_lib.linkLibrary(raylib_dep.artifact("raylib"));
-    // game_lib.linkSystemLibrary("raylib");
-    // game_lib.linkSystemLibrary("rlgl");
     game_lib.linkFramework("CoreVideo");
     game_lib.linkFramework("IOKit");
     game_lib.linkFramework("Cocoa");
@@ -39,59 +37,13 @@ pub fn build(b: *std.Build) void {
     if (!game_only) {
         const exe = b.addExecutable(.{
             .name = "portapong",
-            // .root_source_file = .{ .src_path = .{ .sub_path = "main.zig", .owner = b } },
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         });
 
-        // the "check" step helps zls
-        // {
-        //     // codegen only runs if zig build sees a dependency on the binary output of
-        //     // the step. So we duplicate the build definition so that it doesn't get polluted by
-        //     // b.installArtifact.
-        //     const main = b.addExecutable(.{
-        //         .name = "check",
-        //         .root_source_file = b.path("src/main.zig"),
-        //         .target = target,
-        //         .optimize = optimize,
-        //     });
-
-        //     // main.linkLibrary(raylib_dep.artifact("raylib"));
-        //     // main.linkLibrary(raylib_dep.artifact("rlgl"));
-        //     main.linkSystemLibrary("raylib");
-        //     main.linkFramework("CoreVideo");
-        //     main.linkFramework("IOKit");
-        //     main.linkFramework("Cocoa");
-        //     main.linkFramework("GLUT");
-        //     main.linkFramework("OpenGL");
-        //     main.linkLibC();
-
-        //     const main_check = b.addExecutable(.{
-        //         .name = "check",
-        //         .root_source_file = b.path("src/main.zig"),
-        //         .target = target,
-        //         .optimize = optimize,
-        //     });
-
-        //     // main_check.linkLibrary(raylib_dep.artifact("raylib"));
-        //     main_check.linkSystemLibrary("raylib");
-        //     main_check.linkFramework("CoreVideo");
-        //     main_check.linkFramework("IOKit");
-        //     main_check.linkFramework("Cocoa");
-        //     main_check.linkFramework("GLUT");
-        //     main_check.linkFramework("OpenGL");
-        //     main_check.linkLibC();
-
-        //     const check = b.step("check", "Check if it compiles");
-        //     check.dependOn(&main_check.step);
-        // }
-
         // Link to the Raylib and its required dependencies for macOS.
         exe.linkLibrary(raylib_dep.artifact("raylib"));
-        // exe.linkLibrary(raylib_dep.artifact("rlgl"));
-        // exe.linkSystemLibrary("raylib");
-        // exe.linkSystemLibrary("rlgl");
         exe.linkFramework("CoreVideo");
         exe.linkFramework("IOKit");
         exe.linkFramework("Cocoa");
@@ -100,6 +52,30 @@ pub fn build(b: *std.Build) void {
         exe.linkLibC();
 
         b.installArtifact(exe);
+
+        // the "check" step helps zls
+        {
+            // codegen only runs if zig build sees a dependency on the binary output of
+            // the step. So we duplicate the build definition so that it doesn't get polluted by
+            // b.installArtifact.
+            const exe_check = b.addExecutable(.{
+                .name = "check",
+                .root_source_file = b.path("src/main.zig"),
+                .target = target,
+                .optimize = optimize,
+            });
+
+            exe_check.linkLibrary(raylib_dep.artifact("raylib"));
+            exe_check.linkFramework("CoreVideo");
+            exe_check.linkFramework("IOKit");
+            exe_check.linkFramework("Cocoa");
+            exe_check.linkFramework("GLUT");
+            exe_check.linkFramework("OpenGL");
+            exe_check.linkLibC();
+
+            const check = b.step("check", "Check if it compiles");
+            check.dependOn(&exe_check.step);
+        }
 
         const run_cmd = b.addRunArtifact(exe);
         run_cmd.step.dependOn(b.getInstallStep());

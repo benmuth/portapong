@@ -6,7 +6,7 @@ const rl = @cImport({
 
 // TODO
 // - watch the modified time on the configuration files inside main, if they've been modified, trigger a reload.
-// - recompile the DLL on a separate thread to avoid the editor freeze.
+// - recompile the DLL on a separate thread to avoid the game freeze.
 //     - tweak build system:
 //         - write the editor DLL to a temporary file
 //         - unload, overwrite the DLL from the temporary one, and re-load.
@@ -15,47 +15,44 @@ const rl = @cImport({
 const screen_w = 800;
 const screen_h = 450;
 
-const EditorPtr = *anyopaque;
+const GamePtr = *anyopaque;
 
-var init: *const fn () EditorPtr = undefined;
-var reload: *const fn (EditorPtr) void = undefined;
-var update: *const fn (EditorPtr) void = undefined;
-var draw: *const fn (EditorPtr) void = undefined;
+var init: *const fn () GamePtr = undefined;
+var reload: *const fn (GamePtr) void = undefined;
+var update: *const fn (GamePtr) void = undefined;
+var draw: *const fn (GamePtr) void = undefined;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
-    loadEditorDll() catch @panic("failed to load");
+    loadGameDll() catch @panic("failed to load");
 
-    const editor_state = init();
+    const game_state = init();
 
-    rl.InitWindow(screen_w, screen_h, "BF IDE");
+    rl.InitWindow(screen_w, screen_h, "portapong");
     rl.SetTargetFPS(20);
 
     // WindowShouldClose will return true if the user presses ESC.
     while (!rl.WindowShouldClose()) {
         if (rl.IsKeyPressed(rl.KEY_SLASH)) {
-            unloadEditorDll() catch unreachable;
-            recompileEditorDll(allocator) catch {
+            unloadGameDll() catch unreachable;
+            recompileGameDll(allocator) catch {
                 std.debug.print("failed to recompile", .{});
             };
-            loadEditorDll() catch @panic("failed to load");
-            reload(editor_state);
+            loadGameDll() catch @panic("failed to load");
+            reload(game_state);
         }
-        std.debug.print("1\n", .{});
-        update(editor_state);
-        std.debug.print("2\n", .{});
-        std.debug.print("{p}\n", .{editor_state});
-        draw(editor_state);
+        update(game_state);
+        draw(game_state);
     }
 
     rl.CloseWindow();
 }
 
 var editor_dyn_lib: ?std.DynLib = null;
-fn loadEditorDll() !void {
+fn loadGameDll() !void {
     if (editor_dyn_lib != null) return error.AlreadyLoaded;
 
     var dyn_lib = std.DynLib.open("zig-out/lib/libgame.0.0.1.dylib") catch {
@@ -71,7 +68,7 @@ fn loadEditorDll() !void {
     std.debug.print("Loaded dll\n", .{});
 }
 
-fn unloadEditorDll() !void {
+fn unloadGameDll() !void {
     if (editor_dyn_lib) |*dyn_lib| {
         dyn_lib.close();
         editor_dyn_lib = null;
@@ -80,7 +77,7 @@ fn unloadEditorDll() !void {
     }
 }
 
-fn recompileEditorDll(arena: std.mem.Allocator) !void {
+fn recompileGameDll(arena: std.mem.Allocator) !void {
     const process_args = [_][]const u8{
         "zig",
         "build",

@@ -20,12 +20,6 @@
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
-    // .dependencies = .{
-    //     .raylib = .{
-    //         .url = "https://github.com/raysan5/raylib/archive/df849d2fb0c7df6a818f2f79dd8343565dd1274c.tar.gz",
-    //         .hash = "1220dc010f1a422e36b01cdc1fca88f1319e9e094e8d0e7cbbcb34551e42203d14f4",
-    //     },
-    // },
     .dependencies = .{
         .raylib = .{
             .url = "https://github.com/raysan5/raylib/archive/52f2a10db610d0e9f619fd7c521db08a876547d0.tar.gz",
@@ -38,7 +32,6 @@
         "build.zig",
         "build.zig.zon",
         "src",
-        "/Users/ben/builds/raylib/zig-out/",
         // For example...
         //"LICENSE",
         //"README.md",
