@@ -17,7 +17,7 @@ const screen_h = 450;
 
 const GamePtr = *anyopaque;
 
-var init: *const fn () GamePtr = undefined;
+var init: *const fn (c_int, c_int, c_int) GamePtr = undefined;
 var reload: *const fn (GamePtr) void = undefined;
 var update: *const fn (GamePtr) void = undefined;
 var draw: *const fn (GamePtr) void = undefined;
@@ -29,7 +29,7 @@ pub fn main() !void {
     const allocator = arena.allocator();
     loadGameDll() catch @panic("failed to load");
 
-    const game_state = init();
+    const game_state = init(screen_w, screen_h, screen_h / 5);
 
     rl.InitWindow(screen_w, screen_h, "portapong");
     rl.SetTargetFPS(20);

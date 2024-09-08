@@ -51,8 +51,6 @@ pub fn build(b: *std.Build) void {
         exe.linkFramework("OpenGL");
         exe.linkLibC();
 
-        b.installArtifact(exe);
-
         // the "check" step helps zls
         {
             // codegen only runs if zig build sees a dependency on the binary output of
@@ -77,6 +75,7 @@ pub fn build(b: *std.Build) void {
             check.dependOn(&exe_check.step);
         }
 
+        b.installArtifact(exe);
         const run_cmd = b.addRunArtifact(exe);
         run_cmd.step.dependOn(b.getInstallStep());
 

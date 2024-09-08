@@ -8,21 +8,37 @@ const Game = struct {
 
     frames_counter: u32 = 0,
 
-    window_width: c_int = 200,
-    window_height: c_int = 200,
+    window_width: c_int,
+    window_height: c_int,
+
+    paddle_height: c_int,
+    paddle_width: c_int,
+
+    p1_x: c_int,
+    p1_y: c_int,
+
+    p2_x: c_int,
+    p2_y: c_int,
 };
 
-export fn init(window_width: c_int, window_height: c_int) *anyopaque {
+export fn init(window_width: c_int, window_height: c_int, paddle_height: c_int) *anyopaque {
     var allocator = std.heap.c_allocator;
     const game_state = allocator.create(Game) catch @panic("out of memory.");
-    const text = allocator.allocSentinel(u8, 9, 0) catch @panic("out of memory.");
-    text[0] = 0;
+
+    const paddle_width = @divTrunc(window_width, 10);
+    // const p1_x = ;
+    // const p2_x = window_width - paddle_width;
 
     game_state.* = .{
         .allocator = allocator,
-        .frames_counter = 0,
         .window_width = window_width,
         .window_height = window_height,
+        .paddle_height = paddle_height,
+        .paddle_width = paddle_width,
+        .p1_x = paddle_width,
+        .p2_x = window_width - (2 * paddle_width),
+        .p1_y = @divTrunc(window_height, 2) - @divTrunc(paddle_height, 2),
+        .p2_y = @divTrunc(window_height, 2) - @divTrunc(paddle_height, 2),
     };
 
     return game_state;
@@ -34,11 +50,13 @@ export fn reload(game_state_ptr: *anyopaque) void {
 }
 
 export fn draw(game_state_ptr: *anyopaque) void {
-    // const game_state: *Game = @ptrCast(@alignCast(game_state_ptr));
-    _ = game_state_ptr;
+    const game_state: *Game = @ptrCast(@alignCast(game_state_ptr));
 
     rl.BeginDrawing();
     rl.ClearBackground(rl.RAYWHITE);
+
+    rl.DrawRectangle(game_state.p1_x, game_state.p1_y, game_state.paddle_width, game_state.paddle_height, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 200 });
+    rl.DrawRectangle(game_state.p2_x, game_state.p2_y, game_state.paddle_width, game_state.paddle_height, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 200 });
 
     rl.EndDrawing();
 }
