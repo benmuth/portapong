@@ -120,4 +120,10 @@ export fn update(game_state_ptr: *anyopaque) void {
             game_state.p2_y = game_state.window_height - game_state.paddle_height;
         }
     }
+
+    const b_x_movement = @cos(game_state.b_dir) * ball_movement_speed;
+    const b_y_movement = @sin(game_state.b_dir) * ball_movement_speed;
+
+    game_state.b_x += @intFromFloat(b_x_movement);
+    game_state.b_y += @intFromFloat(b_y_movement);
 }
