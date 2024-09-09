@@ -9,7 +9,7 @@ const rl = @cImport({
 // pre check collision to avoid frame with ball in paddle
 
 const paddle_pix_per_s = 500;
-const ball_pix_per_s = 1000;
+const ball_max_pix_per_s = 1000;
 const paddle_color: rl.Color = .{ .r = 0x18, .g = 0x18, .b = 0x18, .a = 200 };
 const ball_color: rl.Color = .{ .r = 0xFF, .g = 0x0, .b = 0xFF, .a = 200 };
 // var window_width: f32 = -1;
@@ -17,7 +17,7 @@ const ball_color: rl.Color = .{ .r = 0xFF, .g = 0x0, .b = 0xFF, .a = 200 };
 const collision_threshold = 1;
 const fps = 60;
 const paddle_pix_per_f = paddle_pix_per_s / fps;
-const ball_pix_per_f = ball_pix_per_s / fps;
+const ball_max_pix_per_f = ball_max_pix_per_s / fps;
 
 const State = struct {
     allocator: std.mem.Allocator,
@@ -37,6 +37,8 @@ const State = struct {
     b_y: f32,
     b_radius: f32,
     b_dir_radians: f32,
+
+    b_pix_per_f: f32,
 };
 
 export fn init(width: c_int, height: c_int) *anyopaque {
@@ -71,6 +73,7 @@ export fn init(width: c_int, height: c_int) *anyopaque {
         .b_y = window_height / 2,
         .b_radius = 5,
         .b_dir_radians = 0,
+        .b_pix_per_f = ball_max_pix_per_f / 2,
     };
 
     return state;
@@ -93,6 +96,8 @@ export fn draw(game_state_ptr: *anyopaque) void {
     rl.DrawRectangleRec(game_state.p1, paddle_color);
     rl.DrawRectangleRec(game_state.p2, paddle_color);
 
+    // rl.DrawRectangleRec(rl.Rectangle{ .x = 0, .y = 0, .width = 20, .height = 50 }, rl.Color{ .r = 200, .g = 100, .b = 25, .a = 255 });
+
     const ball_x: c_int = @intFromFloat(@trunc(game_state.b_x));
     const ball_y: c_int = @intFromFloat(@trunc(game_state.b_y));
 
@@ -104,69 +109,22 @@ export fn draw(game_state_ptr: *anyopaque) void {
 export fn update(state_ptr: *anyopaque) void {
     const state: *State = @ptrCast(@alignCast(state_ptr));
 
-    const p1_upper_bound = state.p1.y;
-    const p1_lower_bound = state.p1.y + state.paddle_height;
+    movePaddles(state);
+    paddleBounce(state);
 
-    const p2_upper_bound = state.p2.y;
-    const p2_lower_bound = state.p2.y + state.paddle_height;
-
-    if (rl.IsKeyDown(rl.KEY_W)) {
-        if (p1_upper_bound > 0) {
-            state.p1.y -= paddle_pix_per_f;
-        } else {
-            state.p1.y = 0;
-        }
-    } else if (rl.IsKeyDown(rl.KEY_S)) {
-        if (p1_lower_bound < state.window_height) {
-            state.p1.y += paddle_pix_per_f;
-        } else {
-            state.p1.y = state.window_height - state.paddle_height;
-        }
-    }
-
-    if (rl.IsKeyDown(rl.KEY_UP)) {
-        if (p2_upper_bound > 0) {
-            state.p2.y -= paddle_pix_per_f;
-        } else {
-            state.p2.y = 0;
-        }
-    } else if (rl.IsKeyDown(rl.KEY_DOWN)) {
-        if (p2_lower_bound < state.window_height) {
-            state.p2.y += paddle_pix_per_f;
-        } else {
-            state.p2.y = state.window_height - state.paddle_height;
-        }
-    }
-
-    // paddles
-    if (rl.CheckCollisionPointRec(.{ .x = state.b_x - state.b_radius, .y = state.b_y }, state.p1)) { // left, p1
-        const relative_ball_y: f32 = (state.b_y - state.p1.y) / state.paddle_height;
-        state.b_dir_radians = paddleCollisionDir(relative_ball_y, state.b_dir_radians);
-        std.debug.print("dir (rad): {d}\n", .{state.b_dir_radians});
-        std.debug.print("dir (pi multiple): {d}\n", .{state.b_dir_radians / (2 * std.math.pi)});
-        if ((state.b_x - state.b_radius) < state.p1.x + state.paddle_width) {
-            state.b_x = state.p1.x + state.paddle_width + state.b_radius;
-        }
-    } else if (rl.CheckCollisionPointRec(.{ .x = state.b_x + state.b_radius, .y = state.b_y }, state.p2)) { // right, p2
-        const relative_ball_y: f32 = (state.b_y - state.p2.y) / state.paddle_height;
-        state.b_dir_radians = paddleCollisionDir(relative_ball_y, state.b_dir_radians);
-        std.debug.print("dir (rad): {d}\n", .{state.b_dir_radians});
-        std.debug.print("dir (pi multiple): {d}\n", .{state.b_dir_radians / (2 * std.math.pi)});
-        if ((state.b_x + state.b_radius) > state.p2.x) {
-            state.b_x = state.p2.x - state.b_radius;
-        }
-    }
-
+    // reflect off top wall
     if (state.b_y - state.b_radius <= 0) {
         state.b_dir_radians = std.math.tau - state.b_dir_radians;
         state.b_y = state.b_radius;
     }
 
+    // reflect off bottom wall
     if (state.b_y + state.b_radius >= state.window_height) {
         state.b_dir_radians = std.math.tau - state.b_dir_radians;
         state.b_y = state.window_height - state.b_radius;
     }
 
+    // TODO: score
     if (rl.CheckCollisionCircleLine( // left wall
         .{ .x = state.b_x, .y = state.b_y },
         state.b_radius,
@@ -183,11 +141,74 @@ export fn update(state_ptr: *anyopaque) void {
         reload(state_ptr);
     }
 
-    const b_x_movement = @cos(state.b_dir_radians) * ball_pix_per_f;
-    const b_y_movement = @sin(state.b_dir_radians) * ball_pix_per_f;
+    // std.debug.print("speed (p/f): {d}\n", .{state.b_pix_per_f});
+    const b_x_movement = @cos(state.b_dir_radians) * state.b_pix_per_f;
+    const b_y_movement = @sin(state.b_dir_radians) * state.b_pix_per_f;
 
     state.b_x += b_x_movement;
     state.b_y -= b_y_movement;
+}
+
+fn movePaddles(state: *State) void {
+    const p1_upper_bound = state.p1.y;
+    const p1_lower_bound = state.p1.y + state.paddle_height;
+    if (rl.IsKeyDown(rl.KEY_W)) {
+        if (p1_upper_bound > 0) {
+            state.p1.y -= paddle_pix_per_f;
+        } else {
+            state.p1.y = 0;
+        }
+    } else if (rl.IsKeyDown(rl.KEY_S)) {
+        if (p1_lower_bound < state.window_height) {
+            state.p1.y += paddle_pix_per_f;
+        } else {
+            state.p1.y = state.window_height - state.paddle_height;
+        }
+    }
+
+    const p2_upper_bound = state.p2.y;
+    const p2_lower_bound = state.p2.y + state.paddle_height;
+
+    if (rl.IsKeyDown(rl.KEY_UP)) {
+        if (p2_upper_bound > 0) {
+            state.p2.y -= paddle_pix_per_f;
+        } else {
+            state.p2.y = 0;
+        }
+    } else if (rl.IsKeyDown(rl.KEY_DOWN)) {
+        if (p2_lower_bound < state.window_height) {
+            state.p2.y += paddle_pix_per_f;
+        } else {
+            state.p2.y = state.window_height - state.paddle_height;
+        }
+    }
+}
+
+fn paddleBounce(state: *State) void {
+    if (rl.CheckCollisionPointRec(.{ .x = state.b_x - state.b_radius, .y = state.b_y }, state.p1)) {
+        const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, state.p1);
+        // std.debug.print("rby: {d}\n", .{relative_ball_y});
+
+        state.b_dir_radians = paddleCollisionDir(relative_ball_y, state.b_dir_radians);
+        state.b_pix_per_f = paddleCollisionSpeed(relative_ball_y);
+
+        // move ball outside paddle
+        if ((state.b_x - state.b_radius) < state.p1.x + state.paddle_width) {
+            state.b_x = state.p1.x + state.paddle_width + state.b_radius;
+        }
+    } else if (rl.CheckCollisionPointRec(.{ .x = state.b_x + state.b_radius, .y = state.b_y }, state.p2)) {
+        const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, state.p2);
+        std.debug.print("rby: {d}\n", .{relative_ball_y});
+
+        state.b_dir_radians = paddleCollisionDir(relative_ball_y, state.b_dir_radians);
+        state.b_pix_per_f = paddleCollisionSpeed(relative_ball_y);
+
+        // move ball outside paddle
+        if ((state.b_x + state.b_radius) > state.p2.x) {
+            state.b_x = state.p2.x - state.b_radius;
+        }
+    }
+    std.debug.print("dir (rad): {d}\t (deg): {d}\n", .{ state.b_dir_radians, std.math.radiansToDegrees(state.b_dir_radians) });
 }
 
 fn paddleCollisionDir(relative_ball_y: f32, ball_dir: f32) f32 {
@@ -207,4 +228,19 @@ fn paddleCollisionDir(relative_ball_y: f32, ball_dir: f32) f32 {
         return std.math.lerp(std.math.pi * 0.70, std.math.pi * 1.30, relative_ball_y);
     }
     std.debug.panic("ball direction angle outside of bounds: {d}", .{norm_dir});
+}
+
+fn paddleCollisionSpeed(relative_ball_y: f32) f32 {
+    return @max(@as(f32, @floatFromInt(ball_max_pix_per_f)) * relative_ball_y, ball_max_pix_per_f / 4);
+}
+
+fn vertDistFromRectCenter(p: rl.Vector2, rect: rl.Rectangle) f32 {
+    return @abs(p.y - (rect.y + (rect.height / 2)));
+}
+
+fn relativeYPos(p: rl.Vector2, rect: rl.Rectangle) f32 {
+    const yPos: f32 = vertDistFromRectCenter(p, rect) / rect.height;
+
+    std.debug.assert(yPos < 1.0);
+    return yPos;
 }
