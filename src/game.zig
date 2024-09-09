@@ -7,31 +7,26 @@ const paddle_movement_speed = 5;
 const ball_movement_speed = 5;
 const paddle_color: rl.Color = .{ .r = 0x18, .g = 0x18, .b = 0x18, .a = 200 };
 const ball_color: rl.Color = .{ .r = 0xFF, .g = 0x0, .b = 0x0, .a = 200 };
-var window_width: c_int = -1;
-var window_height: c_int = -1;
+var window_width: f32 = -1;
+var window_height: f32 = -1;
 
 const Game = struct {
     allocator: std.mem.Allocator,
 
     frames_counter: u32 = 0,
 
-    window_width: c_int,
-    window_height: c_int,
+    window_width: f32,
+    window_height: f32,
 
-    paddle_height: c_int,
-    paddle_width: c_int,
+    paddle_height: f32,
+    paddle_width: f32,
 
-    p1_x: c_int,
-    p1_y: c_int,
+    p1: rl.Rectangle,
+    p2: rl.Rectangle,
 
-    p2_x: c_int,
-    p2_y: c_int,
-
-    b_x: c_int,
-    b_y: c_int,
-
+    b_x: f32,
+    b_y: f32,
     b_rad: f32,
-
     b_dir: f32,
 };
 
@@ -39,11 +34,11 @@ export fn init(width: c_int, height: c_int) *anyopaque {
     var allocator = std.heap.c_allocator;
     const game_state = allocator.create(Game) catch @panic("out of memory.");
 
-    window_width = width;
-    window_height = height;
+    window_width = @floatFromInt(width);
+    window_height = @floatFromInt(height);
 
-    const paddle_width = @divTrunc(window_width, 10);
-    const paddle_height = @divTrunc(window_height, 5);
+    const paddle_width: f32 = window_width / 10;
+    const paddle_height: f32 = window_height / 5;
 
     game_state.* = .{
         .allocator = allocator,
@@ -51,12 +46,20 @@ export fn init(width: c_int, height: c_int) *anyopaque {
         .window_height = window_height,
         .paddle_height = paddle_height,
         .paddle_width = paddle_width,
-        .p1_x = paddle_width,
-        .p2_x = window_width - (2 * paddle_width),
-        .p1_y = 0,
-        .p2_y = window_height - paddle_height,
-        .b_x = @divTrunc(window_width, 2),
-        .b_y = @divTrunc(window_height, 2),
+        .p1 = .{
+            .x = paddle_width,
+            .y = 0,
+            .width = paddle_width,
+            .height = paddle_height,
+        },
+        .p2 = .{
+            .x = window_width - (2 * paddle_width),
+            .y = window_height - paddle_height,
+            .width = paddle_width,
+            .height = paddle_height,
+        },
+        .b_x = window_width / 2,
+        .b_y = window_height / 2,
         .b_rad = 5,
         .b_dir = 0,
     };
@@ -75,11 +78,13 @@ export fn draw(game_state_ptr: *anyopaque) void {
     rl.BeginDrawing();
     rl.ClearBackground(rl.RAYWHITE);
 
-    rl.DrawRectangle(game_state.p1_x, game_state.p1_y, game_state.paddle_width, game_state.paddle_height, paddle_color);
-    rl.DrawRectangle(game_state.p2_x, game_state.p2_y, game_state.paddle_width, game_state.paddle_height, paddle_color);
+    rl.DrawRectangleRec(game_state.p1, paddle_color);
+    rl.DrawRectangleRec(game_state.p2, paddle_color);
     // rl.DrawRectangle(100, 100, 5, 30, .{ .r = 0xFF, .g = 0x0, .b = 0x0, .a = 255 });
+    const ball_x: c_int = @intFromFloat(@trunc(game_state.b_x));
+    const ball_y: c_int = @intFromFloat(@trunc(game_state.b_y));
 
-    rl.DrawCircle(game_state.b_x, game_state.b_y, game_state.b_rad, ball_color);
+    rl.DrawCircle(ball_x, ball_y, game_state.b_rad, ball_color);
 
     rl.EndDrawing();
 }
@@ -87,43 +92,56 @@ export fn draw(game_state_ptr: *anyopaque) void {
 export fn update(game_state_ptr: *anyopaque) void {
     const game_state: *Game = @ptrCast(@alignCast(game_state_ptr));
 
-    const p1_upper_bound = game_state.p1_y;
-    const p1_lower_bound = game_state.p1_y + game_state.paddle_height;
+    const p1_upper_bound = game_state.p1.y;
+    const p1_lower_bound = game_state.p1.y + game_state.paddle_height;
 
-    const p2_upper_bound = game_state.p2_y;
-    const p2_lower_bound = game_state.p2_y + game_state.paddle_height;
+    const p2_upper_bound = game_state.p2.y;
+    const p2_lower_bound = game_state.p2.y + game_state.paddle_height;
 
     if (rl.IsKeyDown(rl.KEY_W)) {
         if (p1_upper_bound > 0) {
-            game_state.p1_y -= paddle_movement_speed;
+            game_state.p1.y -= paddle_movement_speed;
         } else {
-            game_state.p1_y = 0;
+            game_state.p1.y = 0;
         }
     } else if (rl.IsKeyDown(rl.KEY_S)) {
         if (p1_lower_bound < game_state.window_height) {
-            game_state.p1_y += paddle_movement_speed;
+            game_state.p1.y += paddle_movement_speed;
         } else {
-            game_state.p1_y = game_state.window_height - game_state.paddle_height;
+            game_state.p1.y = game_state.window_height - game_state.paddle_height;
         }
     }
 
     if (rl.IsKeyDown(rl.KEY_UP)) {
         if (p2_upper_bound > 0) {
-            game_state.p2_y -= paddle_movement_speed;
+            game_state.p2.y -= paddle_movement_speed;
         } else {
-            game_state.p2_y = 0;
+            game_state.p2.y = 0;
         }
     } else if (rl.IsKeyDown(rl.KEY_DOWN)) {
         if (p2_lower_bound < game_state.window_height) {
-            game_state.p2_y += paddle_movement_speed;
+            game_state.p2.y += paddle_movement_speed;
         } else {
-            game_state.p2_y = game_state.window_height - game_state.paddle_height;
+            game_state.p2.y = game_state.window_height - game_state.paddle_height;
         }
+    }
+
+    const p1: rl.Rectangle = .{ .x = game_state.p1.x, .y = game_state.p1.y, .width = game_state.paddle_width, .height = game_state.paddle_height };
+    const p2: rl.Rectangle = .{ .x = game_state.p2.x, .y = game_state.p2.y, .width = game_state.paddle_width, .height = game_state.paddle_height };
+
+    // check ball collision with left paddle
+    if (rl.CheckCollisionPointRec(.{ .x = game_state.b_x - game_state.b_rad, .y = game_state.b_y }, p1)) {
+        game_state.b_dir += std.math.pi;
+    }
+
+    // check ball collision with right paddle
+    if (rl.CheckCollisionPointRec(.{ .x = game_state.b_x + game_state.b_rad, .y = game_state.b_y }, p2)) {
+        game_state.b_dir -= std.math.pi;
     }
 
     const b_x_movement = @cos(game_state.b_dir) * ball_movement_speed;
     const b_y_movement = @sin(game_state.b_dir) * ball_movement_speed;
 
-    game_state.b_x += @intFromFloat(b_x_movement);
-    game_state.b_y += @intFromFloat(b_y_movement);
+    game_state.b_x += b_x_movement;
+    game_state.b_y += b_y_movement;
 }
