@@ -32,7 +32,7 @@ pub fn main() !void {
     const game_state = init(window_width, window_height);
 
     rl.InitWindow(window_width, window_height, "portapong");
-    rl.SetTargetFPS(20);
+    rl.SetTargetFPS(60);
 
     // WindowShouldClose will return true if the user presses ESC.
     while (!rl.WindowShouldClose()) {
