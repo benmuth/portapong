@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
         @panic("Unsupported OS");
     }
 
-    const raylib_dep = b.dependency("raylib", .{
+    const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
         .shared = true,
@@ -23,13 +23,13 @@ pub fn build(b: *std.Build) void {
         .version = .{ .major = 0, .minor = 0, .patch = 1 },
     });
 
-    game_lib.linkLibrary(raylib_dep.artifact("raylib"));
-    game_lib.linkFramework("CoreVideo");
-    game_lib.linkFramework("IOKit");
-    game_lib.linkFramework("Cocoa");
-    game_lib.linkFramework("GLUT");
-    game_lib.linkFramework("OpenGL");
-    game_lib.linkLibC();
+    const raylib = raylib_dep.module("raylib");
+    const raygui = raylib_dep.module("raygui");
+    const raylib_artifact = raylib_dep.artifact("raylib");
+
+    game_lib.root_module.addImport("raylib", raylib);
+    game_lib.root_module.addImport("raygui", raygui);
+    game_lib.linkLibrary(raylib_artifact);
 
     b.installArtifact(game_lib);
 
@@ -42,14 +42,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
 
-        // Link to the Raylib and its required dependencies for macOS.
-        exe.linkLibrary(raylib_dep.artifact("raylib"));
-        exe.linkFramework("CoreVideo");
-        exe.linkFramework("IOKit");
-        exe.linkFramework("Cocoa");
-        exe.linkFramework("GLUT");
-        exe.linkFramework("OpenGL");
-        exe.linkLibC();
+        exe.root_module.addImport("raylib", raylib);
+        exe.root_module.addImport("raygui", raygui);
+        exe.linkLibrary(raylib_artifact);
 
         // the "check" step helps zls
         {
@@ -63,13 +58,9 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             });
 
-            lib_check.linkLibrary(raylib_dep.artifact("raylib"));
-            lib_check.linkFramework("CoreVideo");
-            lib_check.linkFramework("IOKit");
-            lib_check.linkFramework("Cocoa");
-            lib_check.linkFramework("GLUT");
-            lib_check.linkFramework("OpenGL");
-            lib_check.linkLibC();
+            lib_check.root_module.addImport("raylib", raylib);
+            lib_check.root_module.addImport("raygui", raygui);
+            lib_check.linkLibrary(raylib_artifact);
 
             const check = b.step("check", "Check if it compiles");
             check.dependOn(&lib_check.step);

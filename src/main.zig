@@ -1,8 +1,6 @@
 //! followed https://zig.news/perky/hot-reloading-with-raylib-4bf9
 const std = @import("std");
-const rl = @cImport({
-    @cInclude("raylib.h");
-});
+const rl = @import("raylib");
 
 // TODO
 // - watch the modified time on the configuration files inside main, if they've been modified, trigger a reload.
@@ -31,12 +29,12 @@ pub fn main() !void {
 
     const game_state = init(window_width, window_height);
 
-    rl.InitWindow(window_width, window_height, "portapong");
-    rl.SetTargetFPS(60);
+    rl.initWindow(window_width, window_height, "portapong");
+    rl.setTargetFPS(60);
 
     // WindowShouldClose will return true if the user presses ESC.
-    while (!rl.WindowShouldClose()) {
-        if (rl.IsKeyPressed(rl.KEY_SLASH)) {
+    while (!rl.windowShouldClose()) {
+        if (rl.isKeyPressed(rl.KeyboardKey.slash)) {
             unloadGameDll() catch unreachable;
             recompileGameDll(allocator) catch {
                 std.debug.print("failed to recompile", .{});
@@ -48,7 +46,8 @@ pub fn main() !void {
         draw(game_state);
     }
 
-    rl.CloseWindow();
+    unloadGameDll() catch @panic("Failed to unload");
+    rl.closeWindow();
 }
 
 var editor_dyn_lib: ?std.DynLib = null;

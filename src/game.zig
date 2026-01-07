@@ -1,7 +1,5 @@
 const std = @import("std");
-const rl = @cImport({
-    @cInclude("raylib.h");
-});
+const rl = @import("raylib");
 
 // TODO:
 // random angle and speed at start
@@ -90,20 +88,20 @@ export fn reload(state_ptr: *anyopaque) void {
 export fn draw(game_state_ptr: *anyopaque) void {
     const game_state: *State = @ptrCast(@alignCast(game_state_ptr));
 
-    rl.BeginDrawing();
-    rl.ClearBackground(rl.RAYWHITE);
+    rl.beginDrawing();
+    rl.clearBackground(rl.Color.white);
 
-    rl.DrawRectangleRec(game_state.p1, paddle_color);
-    rl.DrawRectangleRec(game_state.p2, paddle_color);
+    rl.drawRectangleRec(game_state.p1, paddle_color);
+    rl.drawRectangleRec(game_state.p2, paddle_color);
 
-    // rl.DrawRectangleRec(rl.Rectangle{ .x = 0, .y = 0, .width = 20, .height = 50 }, rl.Color{ .r = 200, .g = 100, .b = 25, .a = 255 });
+    // rl.drawRectangleRec(rl.rectangle{ .x = 0, .y = 0, .width = 20, .height = 50 }, rl.color{ .r = 200, .g = 100, .b = 25, .a = 255 });
 
     const ball_x: c_int = @intFromFloat(@trunc(game_state.b_x));
     const ball_y: c_int = @intFromFloat(@trunc(game_state.b_y));
 
-    rl.DrawCircle(ball_x, ball_y, game_state.b_radius, ball_color);
+    rl.drawCircle(ball_x, ball_y, game_state.b_radius, ball_color);
 
-    rl.EndDrawing();
+    rl.endDrawing();
 }
 
 export fn update(state_ptr: *anyopaque) void {
@@ -125,14 +123,14 @@ export fn update(state_ptr: *anyopaque) void {
     }
 
     // TODO: score
-    if (rl.CheckCollisionCircleLine( // left wall
+    if (rl.checkCollisionCircleLine( // left wall
         .{ .x = state.b_x, .y = state.b_y },
         state.b_radius,
         .{ .x = 0, .y = 0 },
         .{ .x = 0, .y = state.window_height },
     )) {
         reload(state_ptr);
-    } else if (rl.CheckCollisionCircleLine( // right wall
+    } else if (rl.checkCollisionCircleLine( // right wall
         .{ .x = state.b_x, .y = state.b_y },
         state.b_radius,
         .{ .x = state.window_width, .y = 0 },
@@ -152,13 +150,13 @@ export fn update(state_ptr: *anyopaque) void {
 fn movePaddles(state: *State) void {
     const p1_upper_bound = state.p1.y;
     const p1_lower_bound = state.p1.y + state.paddle_height;
-    if (rl.IsKeyDown(rl.KEY_W)) {
+    if (rl.isKeyDown(rl.KeyboardKey.w)) {
         if (p1_upper_bound > 0) {
             state.p1.y -= paddle_pix_per_f;
         } else {
             state.p1.y = 0;
         }
-    } else if (rl.IsKeyDown(rl.KEY_S)) {
+    } else if (rl.isKeyDown(rl.KeyboardKey.s)) {
         if (p1_lower_bound < state.window_height) {
             state.p1.y += paddle_pix_per_f;
         } else {
@@ -169,13 +167,13 @@ fn movePaddles(state: *State) void {
     const p2_upper_bound = state.p2.y;
     const p2_lower_bound = state.p2.y + state.paddle_height;
 
-    if (rl.IsKeyDown(rl.KEY_UP)) {
+    if (rl.isKeyDown(rl.KeyboardKey.up)) {
         if (p2_upper_bound > 0) {
             state.p2.y -= paddle_pix_per_f;
         } else {
             state.p2.y = 0;
         }
-    } else if (rl.IsKeyDown(rl.KEY_DOWN)) {
+    } else if (rl.isKeyDown(rl.KeyboardKey.down)) {
         if (p2_lower_bound < state.window_height) {
             state.p2.y += paddle_pix_per_f;
         } else {
@@ -185,7 +183,7 @@ fn movePaddles(state: *State) void {
 }
 
 fn paddleBounce(state: *State) void {
-    if (rl.CheckCollisionPointRec(.{ .x = state.b_x - state.b_radius, .y = state.b_y }, state.p1)) {
+    if (rl.checkCollisionPointRec(.{ .x = state.b_x - state.b_radius, .y = state.b_y }, state.p1)) {
         const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, state.p1);
         // std.debug.print("rby: {d}\n", .{relative_ball_y});
 
@@ -196,7 +194,7 @@ fn paddleBounce(state: *State) void {
         if ((state.b_x - state.b_radius) < state.p1.x + state.paddle_width) {
             state.b_x = state.p1.x + state.paddle_width + state.b_radius;
         }
-    } else if (rl.CheckCollisionPointRec(.{ .x = state.b_x + state.b_radius, .y = state.b_y }, state.p2)) {
+    } else if (rl.checkCollisionPointRec(.{ .x = state.b_x + state.b_radius, .y = state.b_y }, state.p2)) {
         const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, state.p2);
         std.debug.print("rby: {d}\n", .{relative_ball_y});
 
