@@ -82,20 +82,5 @@ pub fn build(b: *std.Build) void {
 
         const run_step = b.step("run", "Run the app");
         run_step.dependOn(&run_cmd.step);
-
-        // Simple test without DLL
-        const test_mod = b.createModule(.{
-            .root_source_file = b.path("test_simple.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-
-        const test_exe = b.addExecutable(.{
-            .name = "test_simple",
-            .root_module = test_mod,
-        });
-        test_exe.root_module.addImport("raylib", raylib);
-        test_exe.root_module.linkLibrary(raylib_artifact);
-        b.installArtifact(test_exe);
     }
 }
