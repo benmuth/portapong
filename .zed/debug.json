@@ -1,0 +1,18 @@
+[
+  {
+    "label": "Debug my-zig-app",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/zig-out/bin/portapong",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "sourceLanguages": [
+      "zig"
+    ],
+    "build": {
+      "command": "zig",
+      "args": [
+        "build"
+      ]
+    }
+  }
+]
