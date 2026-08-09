@@ -7,7 +7,7 @@ const std = @import("std");
 // vary speed with paddle collision location
 // pre check collision to avoid frame with ball in paddle
 
-pub const Color = struct {
+pub const Color = extern struct {
     r: u8,
     g: u8,
     b: u8,
@@ -20,9 +20,6 @@ const collision_threshold = 1;
 const fps = 60;
 const paddle_pix_per_f = paddle_pix_per_s / fps;
 const ball_max_pix_per_f = ball_max_pix_per_s / fps;
-
-pub const paddle_color: Color = .{ .r = 0x18, .g = 0x18, .b = 0x18, .a = 200 };
-pub const ball_color: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0x0, .a = 200 };
 
 // Simple types to avoid raylib dependency in the DLL
 pub const Rectangle = extern struct {
@@ -44,6 +41,8 @@ pub const DrawState = extern struct {
     ball_x: f32,
     ball_y: f32,
     ball_radius: f32,
+    paddle_color: Color = .{ .r = 0x18, .g = 0x18, .b = 0x18, .a = 200 },
+    ball_color: Color = .{ .r = 0x00, .g = 0x00, .b = 0xFF, .a = 200 },
 };
 
 // Input state passed from main to DLL

@@ -4,14 +4,10 @@ const rl = @import("raylib");
 const g = @import("game");
 
 // TODO
-// - watch the modified time on the configuration files inside main, if they've been modified, trigger a reload.
 // - recompile the dylib on a separate thread to avoid the game freeze.
-//     - tweak build system:
-//         - write the editor dylib to a temporary file
-//         - unload, overwrite the dylib from the temporary one, and re-load.
 // - draw the output of the compilation on-screen, maybe in a custom debug window or in-editor console.
 
-const dylib_name = "zig-out/lib/libgame.0.0.1.dylib";
+const dyn_lib_name = "zig-out/lib/libgame.0.0.1.dylib";
 
 fn rlColor(color: g.Color) rl.Color {
     return rl.Color{
@@ -31,6 +27,8 @@ const DrawState = extern struct {
     ball_x: f32,
     ball_y: f32,
     ball_radius: f32,
+    paddle_color: g.Color,
+    ball_color: g.Color,
 };
 
 const InputState = extern struct {
@@ -54,17 +52,15 @@ const GameCode = struct {
 };
 
 var global_gc: GameCode = .{};
-
-// var initState: *const fn (u32, u32) callconv(.c) GamePtr = undefined;
-// var deinit: *const fn (GamePtr) callconv(.c) void = undefined;
-// var reload: *const fn (GamePtr) callconv(.c) void = undefined;
-// var updateAndRender: *const fn (GamePtr, *const InputState) callconv(.c) void = undefined;
-// var getDrawState: *const fn (GamePtr, *DrawState) callconv(.c) void = undefined;
+var reload_generation: usize = 0;
 
 pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const clock = std.Io.Clock.boot;
+
     const arena = init.arena;
     const allocator = arena.allocator();
-    loadGameDynlib(dylib_name);
+    loadGameDynlib(io, dyn_lib_name);
 
     const window_width = 800;
     const window_height = 450;
@@ -77,12 +73,19 @@ pub fn main(init: std.process.Init) !void {
 
     // WindowShouldClose will return true if the user presses ESC.
     while (!rl.windowShouldClose()) {
+        const new_write_time = getLastWriteTime(io, dyn_lib_name);
+        if (new_write_time.nanoseconds != global_gc.dynlib_last_write_time.nanoseconds) {
+            std.debug.print("{any}\n", .{clock.now(io)});
+            unloadGameDynlib(&global_gc);
+            loadGameDynlib(io, dyn_lib_name);
+        }
+
         if (rl.isKeyPressed(rl.KeyboardKey.slash)) {
-            unloadGameDynlib(&global_gc) catch unreachable;
+            unloadGameDynlib(&global_gc);
             recompileGameDynlib(init.io, allocator) catch {
                 std.debug.print("failed to recompile", .{});
             };
-            loadGameDynlib(dylib_name);
+            loadGameDynlib(io, dyn_lib_name);
             if (global_gc.reload) |reload| {
                 reload(game_state);
             }
@@ -111,12 +114,12 @@ pub fn main(init: std.process.Init) !void {
         rl.clearBackground(rl.Color.white);
 
         // std.debug.print("{any}", .{draw_state.p1});
-        rl.drawRectangleRec(draw_state.p1, rlColor(g.paddle_color));
-        rl.drawRectangleRec(draw_state.p2, rlColor(g.paddle_color));
+        rl.drawRectangleRec(draw_state.p1, rlColor(draw_state.paddle_color));
+        rl.drawRectangleRec(draw_state.p2, rlColor(draw_state.paddle_color));
 
         const ball_x: c_int = @intFromFloat(@trunc(draw_state.ball_x));
         const ball_y: c_int = @intFromFloat(@trunc(draw_state.ball_y));
-        rl.drawCircle(ball_x, ball_y, draw_state.ball_radius, rlColor(g.ball_color));
+        rl.drawCircle(ball_x, ball_y, draw_state.ball_radius, rlColor(draw_state.ball_color));
 
         rl.endDrawing();
     }
@@ -127,7 +130,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Window closed, about to return from main\n", .{});
 }
 
-fn loadGameDynlib(src_dylib_name: []const u8) void {
+fn loadGameDynlib(io: std.Io, src_dylib_name: []const u8) void {
     const dyn_lib: ?std.DynLib = std.DynLib.open(src_dylib_name) catch blk: {
         global_gc.dyn_lib = null;
         global_gc.initState = null;
@@ -142,6 +145,7 @@ fn loadGameDynlib(src_dylib_name: []const u8) void {
     global_gc.dyn_lib = dyn_lib;
 
     if (global_gc.dyn_lib) |*dl| {
+        global_gc.dynlib_last_write_time = getLastWriteTime(io, dyn_lib_name);
         global_gc.initState = dl.lookup(@TypeOf(global_gc.initState.?), "initState");
         global_gc.deinit = dl.lookup(@TypeOf(global_gc.deinit.?), "deinit");
         global_gc.reload = dl.lookup(@TypeOf(global_gc.reload.?), "reload");
@@ -165,13 +169,17 @@ fn loadGameDynlib(src_dylib_name: []const u8) void {
     std.debug.print("Loaded dll\n", .{});
 }
 
-fn unloadGameDynlib(gc: *GameCode) !void {
+fn unloadGameDynlib(gc: *GameCode) void {
     if (gc.dyn_lib) |*dyn_lib| {
         dyn_lib.close();
         gc.dyn_lib = null;
-    } else {
-        return error.AlreadyUnloaded;
     }
+    global_gc.initState = null;
+    global_gc.deinit = null;
+    global_gc.reload = null;
+    global_gc.updateAndRender = null;
+    global_gc.getDrawState = null;
+    std.debug.print("Unloaded dll\n", .{});
 }
 
 fn recompileGameDynlib(io: std.Io, allocator: std.mem.Allocator) !void {
@@ -187,4 +195,9 @@ fn recompileGameDynlib(io: std.Io, allocator: std.mem.Allocator) !void {
         },
         else => return,
     }
+}
+
+fn getLastWriteTime(io: std.Io, filename: []const u8) std.Io.Timestamp {
+    const stat = std.Io.Dir.cwd().statFile(io, filename, .{}) catch return .zero;
+    return stat.mtime;
 }
