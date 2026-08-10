@@ -4,7 +4,6 @@ const rl = @import("raylib");
 const g = @import("game");
 
 // TODO
-// - recompile the dylib on a separate thread to avoid the game freeze.
 // - draw the output of the compilation on-screen, maybe in a custom debug window or in-editor console.
 
 const dyn_lib_name = "zig-out/lib/libgame.0.0.1.dylib";
@@ -87,9 +86,6 @@ pub fn main(init: std.process.Init) !void {
 
         if (rl.isKeyPressed(rl.KeyboardKey.slash)) {
             unloadGameDynlib(&global_gc);
-            // recompileGameDynlib(init.io, game_state.transient_allocator) catch {
-            // std.debug.print("failed to recompile", .{});
-            // };
             loadGameDynlib(io, dyn_lib_name);
             if (global_gc.reload) |reload| {
                 reload(game_state);
@@ -186,21 +182,6 @@ fn unloadGameDynlib(gc: *GameCode) void {
     global_gc.getDrawState = null;
     std.debug.print("Unloaded dll\n", .{});
 }
-
-// fn recompileGameDynlib(io: std.Io, allocator: std.mem.Allocator) !void {
-//     const process_args = [_][]const u8{
-//         "zig",
-//         "build",
-//         "-Dgame_only=true",
-//     };
-//     const res = try std.process.run(allocator, io, .{ .argv = &process_args });
-//     switch (res.term) {
-//         .exited => |exited| {
-//             if (exited == 2) return error.RecompileFail;
-//         },
-//         else => return,
-//     }
-// }
 
 fn getLastWriteTime(io: std.Io, filename: []const u8) std.Io.Timestamp {
     const stat = std.Io.Dir.cwd().statFile(io, filename, .{}) catch return .zero;
