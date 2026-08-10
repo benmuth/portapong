@@ -18,8 +18,6 @@ fn rlColor(color: g.Color) rl.Color {
     };
 }
 
-const GamePtr = *anyopaque;
-
 // Import game types - we'll need to redeclare them to match the dylib
 const DrawState = extern struct {
     p1: rl.Rectangle,
@@ -39,10 +37,12 @@ const InputState = extern struct {
 };
 
 const GameCode = struct {
+    const GamePtr = *anyopaque;
+    const MemPtr = *anyopaque;
     dyn_lib: ?std.DynLib = null,
     dynlib_last_write_time: std.Io.Timestamp = .zero,
 
-    initState: ?*const fn (u32, u32) callconv(.c) GamePtr = null,
+    initState: ?*const fn (MemPtr, u32, u32) callconv(.c) GamePtr = null,
     deinit: ?*const fn (GamePtr) callconv(.c) void = null,
     reload: ?*const fn (GamePtr) callconv(.c) void = null,
     updateAndRender: ?*const fn (GamePtr, ?*const InputState) callconv(.c) void = null,
@@ -58,13 +58,18 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const clock = std.Io.Clock.boot;
 
-    const arena = init.arena;
-    const allocator = arena.allocator();
+    const init_arena = init.arena;
+    const init_allocator = init_arena.allocator();
     loadGameDynlib(io, dyn_lib_name);
 
     const window_width = 800;
     const window_height = 450;
-    const game_state = global_gc.initState.?(window_width, window_height);
+    const memory = try init_allocator.alloc(u8, g.permanent_size + g.transient_size);
+    var game_fba = std.heap.FixedBufferAllocator.init(memory[0..g.permanent_size]);
+    var arena_backing_fba = std.heap.FixedBufferAllocator.init(memory[g.permanent_size..]);
+    var game_arena = std.heap.ArenaAllocator.init(arena_backing_fba.allocator());
+    var game_memory: g.GameMemory = .init(&game_fba, &game_arena);
+    const game_state = global_gc.initState.?(&game_memory, window_width, window_height);
     std.debug.print("Initial state: {any}\n", .{game_state});
 
     rl.setConfigFlags(.{ .window_resizable = true, .window_highdpi = true });
@@ -82,9 +87,9 @@ pub fn main(init: std.process.Init) !void {
 
         if (rl.isKeyPressed(rl.KeyboardKey.slash)) {
             unloadGameDynlib(&global_gc);
-            recompileGameDynlib(init.io, allocator) catch {
-                std.debug.print("failed to recompile", .{});
-            };
+            // recompileGameDynlib(init.io, game_state.transient_allocator) catch {
+            // std.debug.print("failed to recompile", .{});
+            // };
             loadGameDynlib(io, dyn_lib_name);
             if (global_gc.reload) |reload| {
                 reload(game_state);
@@ -182,20 +187,20 @@ fn unloadGameDynlib(gc: *GameCode) void {
     std.debug.print("Unloaded dll\n", .{});
 }
 
-fn recompileGameDynlib(io: std.Io, allocator: std.mem.Allocator) !void {
-    const process_args = [_][]const u8{
-        "zig",
-        "build",
-        "-Dgame_only=true",
-    };
-    const res = try std.process.run(allocator, io, .{ .argv = &process_args });
-    switch (res.term) {
-        .exited => |exited| {
-            if (exited == 2) return error.RecompileFail;
-        },
-        else => return,
-    }
-}
+// fn recompileGameDynlib(io: std.Io, allocator: std.mem.Allocator) !void {
+//     const process_args = [_][]const u8{
+//         "zig",
+//         "build",
+//         "-Dgame_only=true",
+//     };
+//     const res = try std.process.run(allocator, io, .{ .argv = &process_args });
+//     switch (res.term) {
+//         .exited => |exited| {
+//             if (exited == 2) return error.RecompileFail;
+//         },
+//         else => return,
+//     }
+// }
 
 fn getLastWriteTime(io: std.Io, filename: []const u8) std.Io.Timestamp {
     const stat = std.Io.Dir.cwd().statFile(io, filename, .{}) catch return .zero;

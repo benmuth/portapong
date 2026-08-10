@@ -7,6 +7,26 @@ const std = @import("std");
 // vary speed with paddle collision location
 // pre check collision to avoid frame with ball in paddle
 
+pub const permanent_size = 1 * 1024 * 1024;
+pub const transient_size = 1 * 1024 * 1024;
+
+pub const GameMemory = extern struct {
+    pub fn init(
+        fba: *std.heap.FixedBufferAllocator,
+        arena: *std.heap.ArenaAllocator,
+    ) GameMemory {
+        return .{
+            .initialized = true,
+            .permanent_storage = fba,
+            .transient_storage = arena,
+        };
+    }
+    initialized: bool,
+
+    permanent_storage: *std.heap.FixedBufferAllocator,
+    transient_storage: *std.heap.ArenaAllocator,
+};
+
 pub const Color = extern struct {
     r: u8,
     g: u8,
@@ -42,7 +62,7 @@ pub const DrawState = extern struct {
     ball_y: f32,
     ball_radius: f32,
     paddle_color: Color = .{ .r = 0x18, .g = 0x18, .b = 0x18, .a = 200 },
-    ball_color: Color = .{ .r = 0x00, .g = 0x00, .b = 0xFF, .a = 200 },
+    ball_color: Color = .{ .r = 0xFF, .g = 0x00, .b = 0xFF, .a = 200 },
 };
 
 // Input state passed from main to DLL
@@ -80,7 +100,8 @@ fn checkCollisionPointRec(point: Vector2, rec: Rectangle) bool {
 }
 
 const State = struct {
-    allocator: std.mem.Allocator,
+    permanent_allocator: std.mem.Allocator,
+    transient_allocator: std.mem.Allocator,
 
     frames_counter: u32 = 0,
 
@@ -101,9 +122,10 @@ const State = struct {
     b_pix_per_f: f32,
 };
 
-export fn initState(width: u32, height: u32) *anyopaque {
-    var allocator = std.heap.c_allocator;
-    const state = allocator.create(State) catch @panic("out of memory.");
+export fn initState(memory: *anyopaque, width: u32, height: u32) *anyopaque {
+    const gm: *GameMemory = @ptrCast(@alignCast(memory));
+    const permanent_allocator = gm.permanent_storage.allocator();
+    const state = permanent_allocator.create(State) catch @panic("out of fixed size bounds");
 
     const window_width: f32 = @floatFromInt(width);
     const window_height: f32 = @floatFromInt(height);
@@ -113,7 +135,8 @@ export fn initState(width: u32, height: u32) *anyopaque {
     const paddle_height: f32 = window_height / 5;
 
     state.* = .{
-        .allocator = allocator,
+        .permanent_allocator = permanent_allocator,
+        .transient_allocator = gm.transient_storage.allocator(),
         .window_width = window_width,
         .window_height = window_height,
         .paddle_height = paddle_height,
@@ -142,7 +165,7 @@ export fn initState(width: u32, height: u32) *anyopaque {
 
 export fn deinit(state_ptr: *anyopaque) void {
     const state: *State = @ptrCast(@alignCast(state_ptr));
-    state.allocator.destroy(state);
+    state.permanent_allocator.destroy(state);
 }
 
 export fn reload(state_ptr: *anyopaque) void {
