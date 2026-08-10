@@ -42,7 +42,6 @@ const GameCode = struct {
     dynlib_last_write_time: std.Io.Timestamp = .zero,
 
     initState: ?*const fn (MemPtr, u32, u32) callconv(.c) GamePtr = null,
-    reload: ?*const fn (GamePtr) callconv(.c) void = null,
     updateAndRender: ?*const fn (GamePtr, ?*const InputState) callconv(.c) void = null,
     getDrawState: ?*const fn (GamePtr, ?*DrawState) callconv(.c) void = null,
 
@@ -86,9 +85,6 @@ pub fn main(init: std.process.Init) !void {
         if (rl.isKeyPressed(rl.KeyboardKey.slash)) {
             unloadGameDynlib(&global_gc);
             loadGameDynlib(io, dyn_lib_name);
-            if (global_gc.reload) |reload| {
-                reload(game_state);
-            }
         }
 
         // Collect input
@@ -134,7 +130,6 @@ fn loadGameDynlib(io: std.Io, src_dylib_name: []const u8) void {
     const dyn_lib: ?std.DynLib = std.DynLib.open(src_dylib_name) catch blk: {
         global_gc.dyn_lib = null;
         global_gc.initState = null;
-        global_gc.reload = null;
         global_gc.updateAndRender = null;
         global_gc.getDrawState = null;
         global_gc.is_valid = false;
@@ -146,19 +141,16 @@ fn loadGameDynlib(io: std.Io, src_dylib_name: []const u8) void {
     if (global_gc.dyn_lib) |*dl| {
         global_gc.dynlib_last_write_time = getLastWriteTime(io, dyn_lib_name);
         global_gc.initState = dl.lookup(@TypeOf(global_gc.initState.?), "initState");
-        global_gc.reload = dl.lookup(@TypeOf(global_gc.reload.?), "reload");
         global_gc.updateAndRender = dl.lookup(@TypeOf(global_gc.updateAndRender.?), "updateAndRender");
         global_gc.getDrawState = dl.lookup(@TypeOf(global_gc.getDrawState.?), "getDrawState");
 
         global_gc.is_valid = global_gc.initState != null and
-            global_gc.reload != null and
             global_gc.updateAndRender != null and
             global_gc.getDrawState != null;
     }
 
     if (!global_gc.is_valid) {
         global_gc.initState = null;
-        global_gc.reload = null;
         global_gc.updateAndRender = null;
         global_gc.getDrawState = null;
     }
@@ -171,7 +163,6 @@ fn unloadGameDynlib(gc: *GameCode) void {
         gc.dyn_lib = null;
     }
     global_gc.initState = null;
-    global_gc.reload = null;
     global_gc.updateAndRender = null;
     global_gc.getDrawState = null;
     std.debug.print("Unloaded dll\n", .{});

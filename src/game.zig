@@ -163,8 +163,7 @@ export fn initState(memory: *anyopaque, width: u32, height: u32) *anyopaque {
     return state;
 }
 
-
-export fn reload(state_ptr: *anyopaque) void {
+fn reset(state_ptr: *anyopaque) void {
     var state: *State = @ptrCast(@alignCast(state_ptr));
     state.frames_counter = 0;
     state.b_x = state.window_width / 2;
@@ -263,14 +262,14 @@ export fn updateAndRender(state_ptr: *anyopaque, input: *const InputState) void 
         .{ .x = 0, .y = 0 },
         .{ .x = 0, .y = state.window_height },
     )) {
-        reload(state_ptr);
+        reset(state_ptr);
     } else if (checkCollisionCircleLine( // right wall
         .{ .x = state.b_x, .y = state.b_y },
         state.b_radius,
         .{ .x = state.window_width, .y = 0 },
         .{ .x = state.window_width, .y = state.window_height },
     )) {
-        reload(state_ptr);
+        reset(state_ptr);
     }
 
     // std.debug.print("speed (p/f): {d}\n", .{state.b_pix_per_f});
