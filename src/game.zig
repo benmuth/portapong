@@ -163,10 +163,6 @@ export fn initState(memory: *anyopaque, width: u32, height: u32) *anyopaque {
     return state;
 }
 
-export fn deinit(state_ptr: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(state_ptr));
-    state.permanent_allocator.destroy(state);
-}
 
 export fn reload(state_ptr: *anyopaque) void {
     var state: *State = @ptrCast(@alignCast(state_ptr));
