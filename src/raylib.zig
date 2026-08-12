@@ -9,7 +9,7 @@ const g = @import("game");
 const dyn_lib_name = "zig-out/lib/libgame.0.0.1.dylib";
 
 fn rlColor(color: g.Color) rl.Color {
-    return rl.Color{
+    return .{
         .r = color.r,
         .g = color.g,
         .b = color.b,
@@ -17,34 +17,20 @@ fn rlColor(color: g.Color) rl.Color {
     };
 }
 
-// Import game types - we'll need to redeclare them to match the dylib
-const DrawState = extern struct {
-    p1: rl.Rectangle,
-    p2: rl.Rectangle,
-    ball_x: f32,
-    ball_y: f32,
-    ball_radius: f32,
-    paddle_color: g.Color,
-    ball_color: g.Color,
-};
-
-const InputState = extern struct {
-    p1_up: bool,
-    p1_down: bool,
-    p2_up: bool,
-    p2_down: bool,
-};
+fn rlRectangle(r: g.Rectangle) rl.Rectangle {
+    return .{
+        .height = r.height,
+        .width = r.width,
+        .x = r.x,
+        .y = r.y,
+    };
+}
 
 const GameCode = struct {
-    const GamePtr = *anyopaque;
-    const MemPtr = *anyopaque;
     dyn_lib: ?std.DynLib = null,
     dynlib_last_write_time: std.Io.Timestamp = .zero,
 
-    initState: ?*const fn (MemPtr, u32, u32) callconv(.c) GamePtr = null,
-    updateAndRender: ?*const fn (GamePtr, ?*const InputState) callconv(.c) void = null,
-    getDrawState: ?*const fn (GamePtr, ?*DrawState) callconv(.c) void = null,
-
+    updateAndRender: ?*const fn (*g.GameMemory, *const g.Input) callconv(.c) void = null,
     is_valid: bool = false,
 };
 
@@ -54,6 +40,7 @@ var reload_generation: usize = 0;
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const clock = std.Io.Clock.boot;
+    _ = clock; // autofix
 
     const init_arena = init.arena;
     const init_allocator = init_arena.allocator();
@@ -62,33 +49,42 @@ pub fn main(init: std.process.Init) !void {
     const window_width = 800;
     const window_height = 450;
     const memory = try init_allocator.alloc(u8, g.permanent_size + g.transient_size);
+
+    var fba_arena_child = std.heap.FixedBufferAllocator.init(memory[g.permanent_size..]);
+    var game_arena = std.heap.ArenaAllocator.init(fba_arena_child.allocator());
+
     var game_fba = std.heap.FixedBufferAllocator.init(memory[0..g.permanent_size]);
-    var arena_backing_fba = std.heap.FixedBufferAllocator.init(memory[g.permanent_size..]);
-    var game_arena = std.heap.ArenaAllocator.init(arena_backing_fba.allocator());
+
     var game_memory: g.GameMemory = .init(&game_fba, &game_arena);
-    const game_state = global_gc.initState.?(&game_memory, window_width, window_height);
-    std.debug.print("Initial state: {any}\n", .{game_state});
 
     rl.setConfigFlags(.{ .window_resizable = true, .window_highdpi = true });
     rl.initWindow(window_width, window_height, "portapong");
     rl.setTargetFPS(60);
 
+    const camera: rl.Camera2D = .{
+        .offset = .{ .x = window_width / 2, .y = window_height / 2 },
+        .rotation = 0,
+        .target = .{ .x = 8, .y = 4.5 },
+        .zoom = window_width / 16.0,
+    };
     // WindowShouldClose will return true if the user presses ESC.
     while (!rl.windowShouldClose()) {
+        // Reload dynlib if new
         const new_write_time = getLastWriteTime(io, dyn_lib_name);
         if (new_write_time.nanoseconds != global_gc.dynlib_last_write_time.nanoseconds) {
-            std.debug.print("{any}\n", .{clock.now(io)});
+            // std.debug.print("{any}\n", .{clock.now(io)});
             unloadGameDynlib(&global_gc);
             loadGameDynlib(io, dyn_lib_name);
         }
 
+        // Manually reload dynlib
         if (rl.isKeyPressed(rl.KeyboardKey.slash)) {
             unloadGameDynlib(&global_gc);
             loadGameDynlib(io, dyn_lib_name);
         }
 
         // Collect input
-        const input = InputState{
+        const input = g.Input{
             .p1_up = rl.isKeyDown(rl.KeyboardKey.w),
             .p1_down = rl.isKeyDown(rl.KeyboardKey.s),
             .p2_up = rl.isKeyDown(rl.KeyboardKey.up),
@@ -97,26 +93,23 @@ pub fn main(init: std.process.Init) !void {
 
         // Update game state
         if (global_gc.updateAndRender) |updateAndRender| {
-            updateAndRender(game_state, &input);
+            updateAndRender(&game_memory, &input);
         }
 
-        // Get what to draw
-        var draw_state: DrawState = undefined;
-        if (global_gc.getDrawState) |getDrawState| {
-            getDrawState(game_state, &draw_state);
-        }
+        const state: *g.State = @ptrCast(@alignCast(game_memory.permanent_storage.buffer));
+
         // Render
         rl.beginDrawing();
         rl.clearBackground(rl.Color.white);
 
+        rl.beginMode2D(camera);
         // std.debug.print("{any}", .{draw_state.p1});
-        rl.drawRectangleRec(draw_state.p1, rlColor(draw_state.paddle_color));
-        rl.drawRectangleRec(draw_state.p2, rlColor(draw_state.paddle_color));
+        rl.drawRectangleRec(rlRectangle(state.world.p1), rlColor(state.paddle_color));
+        rl.drawRectangleRec(rlRectangle(state.world.p2), rlColor(state.paddle_color));
 
-        const ball_x: c_int = @intFromFloat(@trunc(draw_state.ball_x));
-        const ball_y: c_int = @intFromFloat(@trunc(draw_state.ball_y));
-        rl.drawCircle(ball_x, ball_y, draw_state.ball_radius, rlColor(draw_state.ball_color));
+        rl.drawCircleV(.{ .x = state.world.ball.x, .y = state.world.ball.y }, state.world.ball.radius, rlColor(state.ball_color));
 
+        rl.endMode2D();
         rl.endDrawing();
     }
 
@@ -129,9 +122,7 @@ pub fn main(init: std.process.Init) !void {
 fn loadGameDynlib(io: std.Io, src_dylib_name: []const u8) void {
     const dyn_lib: ?std.DynLib = std.DynLib.open(src_dylib_name) catch blk: {
         global_gc.dyn_lib = null;
-        global_gc.initState = null;
         global_gc.updateAndRender = null;
-        global_gc.getDrawState = null;
         global_gc.is_valid = false;
         break :blk null;
     };
@@ -140,19 +131,13 @@ fn loadGameDynlib(io: std.Io, src_dylib_name: []const u8) void {
 
     if (global_gc.dyn_lib) |*dl| {
         global_gc.dynlib_last_write_time = getLastWriteTime(io, dyn_lib_name);
-        global_gc.initState = dl.lookup(@TypeOf(global_gc.initState.?), "initState");
         global_gc.updateAndRender = dl.lookup(@TypeOf(global_gc.updateAndRender.?), "updateAndRender");
-        global_gc.getDrawState = dl.lookup(@TypeOf(global_gc.getDrawState.?), "getDrawState");
 
-        global_gc.is_valid = global_gc.initState != null and
-            global_gc.updateAndRender != null and
-            global_gc.getDrawState != null;
+        global_gc.is_valid = global_gc.updateAndRender != null;
     }
 
     if (!global_gc.is_valid) {
-        global_gc.initState = null;
         global_gc.updateAndRender = null;
-        global_gc.getDrawState = null;
     }
     std.debug.print("Loaded dll\n", .{});
 }
@@ -162,9 +147,7 @@ fn unloadGameDynlib(gc: *GameCode) void {
         dyn_lib.close();
         gc.dyn_lib = null;
     }
-    global_gc.initState = null;
     global_gc.updateAndRender = null;
-    global_gc.getDrawState = null;
     std.debug.print("Unloaded dll\n", .{});
 }
 
