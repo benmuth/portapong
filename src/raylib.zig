@@ -68,8 +68,8 @@ pub fn main(init: std.process.Init) !void {
     const camera: rl.Camera2D = .{
         .offset = .{ .x = window_width / 2, .y = window_height / 2 },
         .rotation = 0,
-        .target = .{ .x = 8, .y = 4.5 },
-        .zoom = window_width / g.World.width,
+        .target = .{ .x = g.world_width / 2, .y = g.world_height / 2 },
+        .zoom = window_width / g.world_width,
     };
     // WindowShouldClose will return true if the user presses ESC.
     while (!rl.windowShouldClose()) {
@@ -109,6 +109,7 @@ pub fn main(init: std.process.Init) !void {
         rl.beginMode2D(camera);
         // std.debug.print("{any}\n", .{fba_arena_child.buffer[0..100]});
         // std.debug.print("{any}", .{draw_state.p1});
+        rl.drawRectangle(0, 0, window_width, window_height, .{ .r = 0x18, .g = 0x18, .b = 0x18, .a = 0xFF });
         for (out.list[0..out.count]) |e| {
             if (e.ball) {
                 rl.drawCircleV(

@@ -10,6 +10,9 @@ const std = @import("std");
 pub const permanent_size = 1 * 1024 * 1024;
 pub const transient_size = 1 * 1024 * 1024;
 
+pub const world_width: u32 = 160;
+pub const world_height: u32 = 90;
+
 pub const GameMemory = extern struct {
     pub fn init(
         fba: *std.heap.FixedBufferAllocator,
@@ -56,6 +59,7 @@ const Vector2 = extern struct {
 
 // Input state passed from main to DLL
 pub const Input = extern struct {
+    // TODO: add button for manually resetting game
     p1_up: bool,
     p1_down: bool,
     p2_up: bool,
@@ -88,28 +92,8 @@ fn checkCollisionPointRec(point: Vector2, rec: Entity) bool {
         point.y >= rec.y and point.y <= rec.y + rec.height;
 }
 
-pub const World = extern struct {
-    pub const width: u32 = 160;
-    pub const height: u32 = 90;
-    const paddle_height: u32 = 3;
-    const paddle_width: u32 = 1;
-    const p1_x = paddle_width;
-    const p1_y = paddle_height;
-    const p2_x = width - (2 * paddle_width);
-    const p2_y = World.height / 2;
-
-    // const b_x = width * 3 / 4;
-    // const b_y = height / 2;
-    const b_r = 5;
-
-    const ball_color: Color = .{ .r = 0xFF, .g = 0x00, .b = 0x00, .a = 0xFF };
-    const paddle_color: Color = .{ .r = 0xFF, .g = 0x00, .b = 0x00, .a = 0xFF };
-};
-
 pub const State = extern struct {
     initialized: bool = false,
-
-    world: World,
 
     p1_y: f32,
     p2_y: f32,
@@ -124,27 +108,27 @@ pub const State = extern struct {
 };
 
 fn reset(state: *State) void {
-    state.b_x = World.width / 2;
-    state.b_y = World.height / 2;
+    state.b_x = world_width / 2;
+    state.b_y = world_height / 2;
     state.b_dir_radians = 0;
 }
 
-fn paddle(x: f32, y: f32, color: Color) Entity {
+fn paddle(x: f32, y: f32, width: f32, height: f32, color: Color) Entity {
     return .{
         .paddle = true,
         .controllable = true,
-        .height = World.paddle_height + 10,
-        .width = World.paddle_width + 10,
+        .height = height,
+        .width = width,
         .x = x,
         .y = y,
         .color = color,
     };
 }
 
-fn ball(x: f32, y: f32, color: Color) Entity {
+fn ball(x: f32, y: f32, radius: f32, color: Color) Entity {
     return .{
         .ball = true,
-        .radius = World.b_r,
+        .radius = radius,
         .x = x,
         .y = y,
         .color = color,
@@ -156,8 +140,8 @@ pub const Entity = extern struct {
     controllable: bool = false,
     ball: bool = false,
 
-    x: f32 = World.width / 2,
-    y: f32 = World.height / 2,
+    x: f32 = world_width / 2,
+    y: f32 = world_height / 2,
 
     width: f32 = 0,
     height: f32 = 0,
@@ -177,30 +161,42 @@ pub const Entities = extern struct {
     count: usize,
 };
 
+fn movePaddle(y: f32, paddle_height: f32, up: bool, down: bool) f32 {
+    var new_y = y;
+
+    if (up and !down) {
+        new_y -= paddle_units_per_s;
+    } else if (down and !up) {
+        new_y += paddle_units_per_s;
+    }
+
+    return std.math.clamp(new_y, 0, world_height - paddle_height);
+}
+
 export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entities) void {
     var state: *State = @ptrCast(@alignCast(memory.permanent_storage.buffer));
     const allocator = memory.transient_storage.allocator();
     _ = memory.transient_storage.reset(.retain_capacity);
     var entities = std.ArrayList(Entity).initCapacity(allocator, 3) catch @panic("Couldn't initialize array");
 
+    const paddle_height: u32 = 30;
+    const paddle_width: u32 = 10;
+    const ball_radius: u32 = 5;
+
     // paddles
-    const p1: Entity = blk: {
-        var new_y = if (input.p1_up) state.p1_y - paddle_units_per_s else if (input.p1_down) state.p1_y + paddle_units_per_s else state.p1_y;
-        // const bottom_bound = state.p1_y;
-        const top_bound = state.p1_y + World.paddle_height;
+    const p1: Entity = paddle(paddle_width, movePaddle(
+        state.p1_y,
+        paddle_height,
+        input.p1_up,
+        input.p1_down,
+    ), paddle_width, paddle_height, .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF });
 
-        new_y = std.math.clamp(new_y, 0, top_bound);
-        break :blk paddle(World.p1_x, new_y, World.paddle_color);
-    };
-
-    const p2: Entity = blk: {
-        var new_y = if (input.p2_up) state.p2_y - paddle_units_per_s else if (input.p2_down) state.p2_y + paddle_units_per_s else state.p2_y;
-        // const bottom_bound = state.p2_y;
-        const top_bound = state.p2_y + World.paddle_height;
-
-        new_y = std.math.clamp(new_y, 0, top_bound);
-        break :blk paddle(World.p2_x, new_y, .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF });
-    };
+    const p2: Entity = paddle(world_width - (paddle_width), movePaddle(
+        state.p2_y,
+        paddle_height,
+        input.p2_up,
+        input.p2_down,
+    ), paddle_width, paddle_height, .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF });
 
     state.p1_y = p1.y;
     state.p2_y = p2.y;
@@ -210,7 +206,7 @@ export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entiti
     // ball
     // collide with paddle
     if (checkCollisionPointRec(
-        .{ .x = state.b_x - World.b_r, .y = state.b_y },
+        .{ .x = state.b_x - ball_radius, .y = state.b_y },
         p1,
     )) {
         const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, p1);
@@ -219,11 +215,11 @@ export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entiti
         state.b_speed = paddleCollisionSpeed(relative_ball_y);
 
         // move ball outside paddle
-        if ((state.b_x - World.b_r) < World.p1_x + World.paddle_width) {
-            state.b_x = World.p1_x + World.paddle_width + World.b_r;
+        if ((state.b_x - ball_radius) < p1.x + paddle_width) {
+            state.b_x = p1.x + paddle_width + ball_radius;
         }
     } else if (checkCollisionPointRec(
-        .{ .x = state.b_x + World.b_r, .y = state.b_y },
+        .{ .x = state.b_x + ball_radius, .y = state.b_y },
         p2,
     )) {
         const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, p2);
@@ -232,36 +228,36 @@ export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entiti
         state.b_speed = paddleCollisionSpeed(relative_ball_y);
 
         // move ball outside paddle
-        if ((state.b_x + World.b_r) > p2.x) {
-            state.b_x = p2.x - World.b_r;
+        if ((state.b_x + ball_radius) > p2.x) {
+            state.b_x = p2.x - ball_radius;
         }
     }
 
     // reflect off top wall
-    if (state.b_y - World.b_r <= 0) {
+    if (state.b_y - ball_radius <= 0) {
         state.b_dir_radians = std.math.tau - state.b_dir_radians;
-        state.b_y = World.b_r;
+        state.b_y = ball_radius;
     }
 
     // reflect off bottom wall
-    if (state.b_y + World.b_r >= World.height) {
+    if (state.b_y + ball_radius >= world_height) {
         state.b_dir_radians = std.math.tau - state.b_dir_radians;
-        state.b_y = World.height - World.b_r;
+        state.b_y = world_height - ball_radius;
     }
 
     // TODO: score
     if (checkCollisionCircleLine( // left wall
         .{ .x = state.b_x, .y = state.b_y },
-        World.b_r,
+        ball_radius,
         .{ .x = 0, .y = 0 },
-        .{ .x = 0, .y = World.height },
+        .{ .x = 0, .y = world_height },
     )) {
         reset(state);
     } else if (checkCollisionCircleLine( // right wall
         .{ .x = state.b_x, .y = state.b_y },
-        World.b_r,
-        .{ .x = World.width, .y = 0 },
-        .{ .x = World.width, .y = World.height },
+        ball_radius,
+        .{ .x = world_width, .y = 0 },
+        .{ .x = world_width, .y = world_height },
     )) {
         reset(state);
     }
@@ -276,8 +272,8 @@ export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entiti
         .ball = true,
         .x = state.b_x,
         .y = state.b_y,
-        .radius = World.b_r,
-        .color = World.ball_color,
+        .radius = ball_radius,
+        .color = .{ .r = 0xFF, .g = 0x00, .b = 0xFF, .a = 0xFF },
     }) catch @panic("Failed to allocate");
 
     const entities_copy = entities.toOwnedSlice(allocator) catch @panic("Failed to copy slice.");
