@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const game_only = b.option(bool, "game_only", "only build the shared game library") orelse false;
+    const sign = b.option(bool, "sign", "codesign the executable so Instruments can attach") orelse false;
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -72,7 +73,17 @@ pub fn build(b: *std.Build) void {
             check.dependOn(&lib_check.step);
         }
 
-        b.installArtifact(exe);
+        const install_exe = b.addInstallArtifact(exe, .{});
+        b.getInstallStep().dependOn(&install_exe.step);
+
+        // linking drops the entitlement, so re-sign the installed binary
+        if (sign) {
+            const sign_cmd = b.addSystemCommand(&.{b.pathFromRoot("sign.sh")});
+            sign_cmd.addArg(b.getInstallPath(.bin, exe.out_filename));
+            sign_cmd.step.dependOn(&install_exe.step);
+            b.getInstallStep().dependOn(&sign_cmd.step);
+        }
+
         const run_cmd = b.addRunArtifact(exe);
         run_cmd.step.dependOn(b.getInstallStep());
 
