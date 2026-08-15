@@ -129,23 +129,25 @@ fn reset(state: *State) void {
     state.b_dir_radians = 0;
 }
 
-fn paddle(x: f32, y: f32) Entity {
+fn paddle(x: f32, y: f32, color: Color) Entity {
     return .{
         .paddle = true,
         .controllable = true,
-        .height = World.paddle_height,
-        .width = World.paddle_width,
+        .height = World.paddle_height + 10,
+        .width = World.paddle_width + 10,
         .x = x,
         .y = y,
+        .color = color,
     };
 }
 
-fn ball(x: f32, y: f32) Entity {
+fn ball(x: f32, y: f32, color: Color) Entity {
     return .{
         .ball = true,
         .radius = World.b_r,
         .x = x,
         .y = y,
+        .color = color,
     };
 }
 
@@ -178,31 +180,35 @@ pub const Entities = extern struct {
 export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entities) void {
     var state: *State = @ptrCast(@alignCast(memory.permanent_storage.buffer));
     const allocator = memory.transient_storage.allocator();
+    _ = memory.transient_storage.reset(.retain_capacity);
     var entities = std.ArrayList(Entity).initCapacity(allocator, 3) catch @panic("Couldn't initialize array");
 
     // paddles
     const p1: Entity = blk: {
         var new_y = if (input.p1_up) state.p1_y - paddle_units_per_s else if (input.p1_down) state.p1_y + paddle_units_per_s else state.p1_y;
-        const bottom_bound = state.p1_y;
+        // const bottom_bound = state.p1_y;
         const top_bound = state.p1_y + World.paddle_height;
 
-        new_y = std.math.clamp(new_y, bottom_bound, top_bound);
-        break :blk paddle(World.p1_x, new_y);
+        new_y = std.math.clamp(new_y, 0, top_bound);
+        break :blk paddle(World.p1_x, new_y, World.paddle_color);
     };
 
     const p2: Entity = blk: {
         var new_y = if (input.p2_up) state.p2_y - paddle_units_per_s else if (input.p2_down) state.p2_y + paddle_units_per_s else state.p2_y;
-        const bottom_bound = state.p2_y;
+        // const bottom_bound = state.p2_y;
         const top_bound = state.p2_y + World.paddle_height;
 
-        new_y = std.math.clamp(new_y, bottom_bound, top_bound);
-        break :blk paddle(World.p2_x, new_y);
+        new_y = std.math.clamp(new_y, 0, top_bound);
+        break :blk paddle(World.p2_x, new_y, .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF });
     };
 
+    state.p1_y = p1.y;
+    state.p2_y = p2.y;
     entities.append(allocator, p1) catch @panic("Couldn't allocate");
     entities.append(allocator, p2) catch @panic("Couldn't allocate");
 
     // ball
+    // collide with paddle
     if (checkCollisionPointRec(
         .{ .x = state.b_x - World.b_r, .y = state.b_y },
         p1,
@@ -266,10 +272,17 @@ export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entiti
 
     state.b_x += b_x_movement;
     state.b_y -= b_y_movement;
-    entities.append(allocator, .{ .ball = true, .x = state.b_x, .y = state.b_y, .radius = World.b_r }) catch @panic("Failed to allocate");
+    entities.append(allocator, .{
+        .ball = true,
+        .x = state.b_x,
+        .y = state.b_y,
+        .radius = World.b_r,
+        .color = World.ball_color,
+    }) catch @panic("Failed to allocate");
 
-    out.count = entities.items.len;
-    out.list = entities.items.ptr;
+    const entities_copy = entities.toOwnedSlice(allocator) catch @panic("Failed to copy slice.");
+    out.count = entities_copy.len;
+    out.list = entities_copy.ptr;
 }
 
 fn paddleCollisionDir(relative_ball_y: f32, ball_dir: f32) f32 {
