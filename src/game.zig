@@ -113,6 +113,13 @@ fn reset(state: *State) void {
     state.b_dir_radians = 0;
 }
 
+fn score(state: *State, ball_radius: f32) void {
+    if (state.b_x - ball_radius <= 0 or state.b_x + ball_radius >= world_width) {
+        std.debug.print("scored!", .{});
+        reset(state);
+    }
+}
+
 fn paddle(x: f32, y: f32, width: f32, height: f32, color: Color) Entity {
     return .{
         .paddle = true,
@@ -184,19 +191,31 @@ export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entiti
     const ball_radius: u32 = 5;
 
     // paddles
-    const p1: Entity = paddle(paddle_width, movePaddle(
-        state.p1_y,
+    const p1: Entity = paddle(
+        paddle_width,
+        movePaddle(
+            state.p1_y,
+            paddle_height,
+            input.p1_up,
+            input.p1_down,
+        ),
+        paddle_width,
         paddle_height,
-        input.p1_up,
-        input.p1_down,
-    ), paddle_width, paddle_height, .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF });
+        .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF },
+    );
 
-    const p2: Entity = paddle(world_width - (paddle_width), movePaddle(
-        state.p2_y,
+    const p2: Entity = paddle(
+        world_width - (paddle_width),
+        movePaddle(
+            state.p2_y,
+            paddle_height,
+            input.p2_up,
+            input.p2_down,
+        ),
+        paddle_width,
         paddle_height,
-        input.p2_up,
-        input.p2_down,
-    ), paddle_width, paddle_height, .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF });
+        .{ .r = 0x00, .g = 0xFF, .b = 0xFF, .a = 0xFF },
+    );
 
     state.p1_y = p1.y;
     state.p2_y = p2.y;
@@ -245,22 +264,7 @@ export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entiti
         state.b_y = world_height - ball_radius;
     }
 
-    // TODO: score
-    if (checkCollisionCircleLine( // left wall
-        .{ .x = state.b_x, .y = state.b_y },
-        ball_radius,
-        .{ .x = 0, .y = 0 },
-        .{ .x = 0, .y = world_height },
-    )) {
-        reset(state);
-    } else if (checkCollisionCircleLine( // right wall
-        .{ .x = state.b_x, .y = state.b_y },
-        ball_radius,
-        .{ .x = world_width, .y = 0 },
-        .{ .x = world_width, .y = world_height },
-    )) {
-        reset(state);
-    }
+    score(state, ball_radius);
 
     // std.debug.print("speed (p/f): {d}\n", .{state.b_pix_per_f});
     const b_x_movement = @cos(state.b_dir_radians) * state.b_speed;
