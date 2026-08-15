@@ -30,12 +30,15 @@ const GameCode = struct {
     dyn_lib: ?std.DynLib = null,
     dynlib_last_write_time: std.Io.Timestamp = .zero,
 
-    updateAndRender: ?*const fn (*g.GameMemory, *const g.Input) callconv(.c) void = null,
+    updateAndRender: ?*const fn (*g.GameMemory, *const g.Input, *g.Entities) callconv(.c) void = null,
     is_valid: bool = false,
 };
 
 var global_gc: GameCode = .{};
 var reload_generation: usize = 0;
+
+const window_width = 800;
+const window_height = 450;
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -46,16 +49,17 @@ pub fn main(init: std.process.Init) !void {
     const init_allocator = init_arena.allocator();
     loadGameDynlib(io, dyn_lib_name);
 
-    const window_width = 800;
-    const window_height = 450;
     const memory = try init_allocator.alloc(u8, g.permanent_size + g.transient_size);
+
+    var game_fba = std.heap.FixedBufferAllocator.init(memory[0..g.permanent_size]);
 
     var fba_arena_child = std.heap.FixedBufferAllocator.init(memory[g.permanent_size..]);
     var game_arena = std.heap.ArenaAllocator.init(fba_arena_child.allocator());
 
-    var game_fba = std.heap.FixedBufferAllocator.init(memory[0..g.permanent_size]);
-
     var game_memory: g.GameMemory = .init(&game_fba, &game_arena);
+
+    // var entities = std.ArrayList(g.Entity).initCapacity(game_arena.allocator(), 3) catch @panic("Couldn't allocate memory");
+    var out: g.Entities = .empty;
 
     rl.setConfigFlags(.{ .window_resizable = true, .window_highdpi = true });
     rl.initWindow(window_width, window_height, "portapong");
@@ -65,7 +69,7 @@ pub fn main(init: std.process.Init) !void {
         .offset = .{ .x = window_width / 2, .y = window_height / 2 },
         .rotation = 0,
         .target = .{ .x = 8, .y = 4.5 },
-        .zoom = window_width / 16.0,
+        .zoom = window_width / g.World.width,
     };
     // WindowShouldClose will return true if the user presses ESC.
     while (!rl.windowShouldClose()) {
@@ -93,22 +97,32 @@ pub fn main(init: std.process.Init) !void {
 
         // Update game state
         if (global_gc.updateAndRender) |updateAndRender| {
-            updateAndRender(&game_memory, &input);
+            updateAndRender(&game_memory, &input, &out);
         }
 
-        const state: *g.State = @ptrCast(@alignCast(game_memory.permanent_storage.buffer));
+        // const state: *g.State = @ptrCast(@alignCast(game_memory.permanent_storage.buffer));
 
         // Render
         rl.beginDrawing();
         rl.clearBackground(rl.Color.white);
 
         rl.beginMode2D(camera);
+        // std.debug.print("{any}\n", .{fba_arena_child.buffer[0..100]});
         // std.debug.print("{any}", .{draw_state.p1});
-        rl.drawRectangleRec(rlRectangle(state.world.p1), rlColor(state.paddle_color));
-        rl.drawRectangleRec(rlRectangle(state.world.p2), rlColor(state.paddle_color));
-
-        rl.drawCircleV(.{ .x = state.world.ball.x, .y = state.world.ball.y }, state.world.ball.radius, rlColor(state.ball_color));
-
+        for (out.list[0..out.count]) |e| {
+            if (e.ball) {
+                rl.drawCircleV(
+                    .{ .x = e.x, .y = e.y },
+                    e.radius,
+                    rlColor(e.color),
+                );
+            } else {
+                rl.drawRectangleRec(
+                    rlRectangle(.{ .height = e.height, .width = e.width, .x = e.x, .y = e.y }),
+                    rlColor(e.color),
+                );
+            }
+        }
         rl.endMode2D();
         rl.endDrawing();
     }

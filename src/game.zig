@@ -34,12 +34,10 @@ pub const Color = extern struct {
     a: u8,
 };
 
-const paddle_pix_per_s = 500;
-const ball_max_pix_per_s = 1000;
-const collision_threshold = 1;
-const fps = 60;
-const paddle_pix_per_f = paddle_pix_per_s / fps;
-const ball_max_pix_per_f = ball_max_pix_per_s / fps;
+const paddle_units_per_s = 10;
+const ball_max_units_per_s = 20;
+// const paddle_pix_per_f = paddle_pix_per_s / fps;
+// const ball_max_pix_per_f = ball_max_pix_per_s / fps;
 
 // Simple types to avoid raylib dependency in the DLL
 pub const Rectangle = extern struct {
@@ -85,21 +83,27 @@ fn checkCollisionCircleLine(center: Vector2, radius: f32, p1: Vector2, p2: Vecto
     return (t1 >= 0 and t1 <= 1) or (t2 >= 0 and t2 <= 1);
 }
 
-fn checkCollisionPointRec(point: Vector2, rec: Rectangle) bool {
+fn checkCollisionPointRec(point: Vector2, rec: Entity) bool {
     return point.x >= rec.x and point.x <= rec.x + rec.width and
         point.y >= rec.y and point.y <= rec.y + rec.height;
 }
 
-const World = extern struct {
-    const width: i8 = 16;
-    const height: i8 = 9;
-    const paddle_height: i8 = 3;
-    const paddle_width: i8 = 1;
+pub const World = extern struct {
+    pub const width: u32 = 160;
+    pub const height: u32 = 90;
+    const paddle_height: u32 = 3;
+    const paddle_width: u32 = 1;
+    const p1_x = paddle_width;
+    const p1_y = paddle_height;
+    const p2_x = width - (2 * paddle_width);
+    const p2_y = World.height / 2;
 
-    p1: Rectangle,
-    p2: Rectangle,
+    // const b_x = width * 3 / 4;
+    // const b_y = height / 2;
+    const b_r = 5;
 
-    ball: Circle,
+    const ball_color: Color = .{ .r = 0xFF, .g = 0x00, .b = 0x00, .a = 0xFF };
+    const paddle_color: Color = .{ .r = 0xFF, .g = 0x00, .b = 0x00, .a = 0xFF };
 };
 
 pub const State = extern struct {
@@ -107,158 +111,165 @@ pub const State = extern struct {
 
     world: World,
 
-    ball_dir_radians: f32,
+    p1_y: f32,
+    p2_y: f32,
+
+    b_x: f32,
+    b_y: f32,
+
+    b_dir_radians: f32,
 
     // ball speed in units per second
-    ball_speed: f32,
-
-    ball_color: Color,
-
-    paddle_color: Color,
+    b_speed: f32,
 };
 
-fn initState(state: *State) void {
-    state.* = .{
-        .initialized = true,
-        .world = .{
-            .ball = .{
-                .x = World.width * 3 / 4,
-                .y = World.height / 2,
-                .radius = 5,
-            },
-            .p1 = .{
-                .x = World.paddle_width,
-                .y = World.height / 2,
-                .width = World.paddle_width,
-                .height = World.paddle_height,
-            },
-            .p2 = .{
-                .x = World.width - (2 * World.paddle_width),
-                .y = World.paddle_height / 2,
-                .width = World.paddle_width,
-                .height = World.paddle_height,
-            },
-        },
+fn reset(state: *State) void {
+    state.b_x = World.width / 2;
+    state.b_y = World.height / 2;
+    state.b_dir_radians = 0;
+}
 
-        .ball_dir_radians = 0,
-        .ball_speed = ball_max_pix_per_f / 2,
-        .ball_color = .{ .r = 0xFF, .g = 0x00, .b = 0x00, .a = 0xFF },
-        .paddle_color = .{ .r = 0xFF, .g = 0x00, .b = 0x00, .a = 0xFF },
+fn paddle(x: f32, y: f32) Entity {
+    return .{
+        .paddle = true,
+        .controllable = true,
+        .height = World.paddle_height,
+        .width = World.paddle_width,
+        .x = x,
+        .y = y,
     };
 }
 
-fn reset(state: *State) void {
-    state.world.ball.x = World.width / 2;
-    state.world.ball.y = World.height / 2;
-    state.ball_dir_radians = 0;
+fn ball(x: f32, y: f32) Entity {
+    return .{
+        .ball = true,
+        .radius = World.b_r,
+        .x = x,
+        .y = y,
+    };
 }
 
-export fn updateAndRender(memory: *GameMemory, input: *const Input) void {
+pub const Entity = extern struct {
+    paddle: bool = false,
+    controllable: bool = false,
+    ball: bool = false,
+
+    x: f32 = World.width / 2,
+    y: f32 = World.height / 2,
+
+    width: f32 = 0,
+    height: f32 = 0,
+
+    radius: f32 = 0,
+
+    color: Color = .{ .r = 0xFF, .g = 0x00, .b = 0xFF, .a = 0xFF },
+};
+
+pub const Entities = extern struct {
+    pub const empty: Entities = .{
+        .list = undefined,
+        .count = 0,
+    };
+
+    list: [*]Entity,
+    count: usize,
+};
+
+export fn updateAndRender(memory: *GameMemory, input: *const Input, out: *Entities) void {
     var state: *State = @ptrCast(@alignCast(memory.permanent_storage.buffer));
+    const allocator = memory.transient_storage.allocator();
+    var entities = std.ArrayList(Entity).initCapacity(allocator, 3) catch @panic("Couldn't initialize array");
 
-    if (state.initialized) {
-        // move paddles
-        const p1_upper_bound = state.world.p1.y;
-        const p1_lower_bound = state.world.p1.y + World.paddle_height;
-        if (input.p1_up) {
-            if (p1_upper_bound > 0) {
-                state.world.p1.y -= paddle_pix_per_f;
-            } else {
-                state.world.p1.y = 0;
-            }
-        } else if (input.p1_down) {
-            if (p1_lower_bound < World.height) {
-                state.world.p1.y += paddle_pix_per_f;
-            } else {
-                state.world.p1.y = World.height - World.paddle_height;
-            }
+    // paddles
+    const p1: Entity = blk: {
+        var new_y = if (input.p1_up) state.p1_y - paddle_units_per_s else if (input.p1_down) state.p1_y + paddle_units_per_s else state.p1_y;
+        const bottom_bound = state.p1_y;
+        const top_bound = state.p1_y + World.paddle_height;
+
+        new_y = std.math.clamp(new_y, bottom_bound, top_bound);
+        break :blk paddle(World.p1_x, new_y);
+    };
+
+    const p2: Entity = blk: {
+        var new_y = if (input.p2_up) state.p2_y - paddle_units_per_s else if (input.p2_down) state.p2_y + paddle_units_per_s else state.p2_y;
+        const bottom_bound = state.p2_y;
+        const top_bound = state.p2_y + World.paddle_height;
+
+        new_y = std.math.clamp(new_y, bottom_bound, top_bound);
+        break :blk paddle(World.p2_x, new_y);
+    };
+
+    entities.append(allocator, p1) catch @panic("Couldn't allocate");
+    entities.append(allocator, p2) catch @panic("Couldn't allocate");
+
+    // ball
+    if (checkCollisionPointRec(
+        .{ .x = state.b_x - World.b_r, .y = state.b_y },
+        p1,
+    )) {
+        const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, p1);
+
+        state.b_dir_radians = paddleCollisionDir(relative_ball_y, state.b_dir_radians);
+        state.b_speed = paddleCollisionSpeed(relative_ball_y);
+
+        // move ball outside paddle
+        if ((state.b_x - World.b_r) < World.p1_x + World.paddle_width) {
+            state.b_x = World.p1_x + World.paddle_width + World.b_r;
         }
+    } else if (checkCollisionPointRec(
+        .{ .x = state.b_x + World.b_r, .y = state.b_y },
+        p2,
+    )) {
+        const relative_ball_y: f32 = relativeYPos(.{ .x = state.b_x, .y = state.b_y }, p2);
 
-        const p2_upper_bound = state.world.p2.y;
-        const p2_lower_bound = state.world.p2.y + World.paddle_height;
+        state.b_dir_radians = paddleCollisionDir(relative_ball_y, state.b_dir_radians);
+        state.b_speed = paddleCollisionSpeed(relative_ball_y);
 
-        if (input.p2_up) {
-            if (p2_upper_bound > 0) {
-                state.world.p2.y -= paddle_pix_per_f;
-            } else {
-                state.world.p2.y = 0;
-            }
-        } else if (input.p2_down) {
-            if (p2_lower_bound < World.height) {
-                state.world.p2.y += paddle_pix_per_f;
-            } else {
-                state.world.p2.y = World.height - World.paddle_height;
-            }
+        // move ball outside paddle
+        if ((state.b_x + World.b_r) > p2.x) {
+            state.b_x = p2.x - World.b_r;
         }
-
-        // paddle bounce
-        if (checkCollisionPointRec(.{ .x = state.world.ball.x - state.world.ball.radius, .y = state.world.ball.y }, state.world.p1)) {
-            const relative_ball_y: f32 = relativeYPos(.{ .x = state.world.ball.x, .y = state.world.ball.y }, state.world.p1);
-
-            state.ball_dir_radians = paddleCollisionDir(relative_ball_y, state.ball_dir_radians);
-            state.ball_speed = paddleCollisionSpeed(relative_ball_y);
-
-            // move ball outside paddle
-            if ((state.world.ball.x - state.world.ball.radius) < state.world.p1.x + World.paddle_width) {
-                state.world.ball.x = state.world.p1.x + World.paddle_width + state.world.ball.radius;
-            }
-        } else if (checkCollisionPointRec(
-            .{
-                .x = state.world.ball.x + state.world.ball.radius,
-                .y = state.world.ball.y,
-            },
-            state.world.p2,
-        )) {
-            const relative_ball_y: f32 = relativeYPos(.{ .x = state.world.ball.x, .y = state.world.ball.y }, state.world.p2);
-
-            state.ball_dir_radians = paddleCollisionDir(relative_ball_y, state.ball_dir_radians);
-            state.ball_speed = paddleCollisionSpeed(relative_ball_y);
-
-            // move ball outside paddle
-            if ((state.world.ball.x + state.world.ball.radius) > state.world.p2.x) {
-                state.world.ball.x = state.world.p2.x - state.world.ball.radius;
-            }
-        }
-
-        // reflect off top wall
-        if (state.world.ball.y - state.world.ball.radius <= 0) {
-            state.ball_dir_radians = std.math.tau - state.ball_dir_radians;
-            state.world.ball.y = state.world.ball.radius;
-        }
-
-        // reflect off bottom wall
-        if (state.world.ball.y + state.world.ball.radius >= World.height) {
-            state.ball_dir_radians = std.math.tau - state.ball_dir_radians;
-            state.world.ball.y = World.height - state.world.ball.radius;
-        }
-
-        // TODO: score
-        if (checkCollisionCircleLine( // left wall
-            .{ .x = state.world.ball.x, .y = state.world.ball.y },
-            state.world.ball.radius,
-            .{ .x = 0, .y = 0 },
-            .{ .x = 0, .y = World.height },
-        )) {
-            reset(state);
-        } else if (checkCollisionCircleLine( // right wall
-            .{ .x = state.world.ball.x, .y = state.world.ball.y },
-            state.world.ball.radius,
-            .{ .x = World.width, .y = 0 },
-            .{ .x = World.width, .y = World.height },
-        )) {
-            reset(state);
-        }
-
-        // std.debug.print("speed (p/f): {d}\n", .{state.b_pix_per_f});
-        const b_x_movement = @cos(state.ball_dir_radians) * state.ball_speed;
-        const b_y_movement = @sin(state.ball_dir_radians) * state.ball_speed;
-
-        state.world.ball.x += b_x_movement;
-        state.world.ball.y -= b_y_movement;
-    } else {
-        initState(state);
-        std.debug.print("initial state: {any}\n", .{state});
     }
+
+    // reflect off top wall
+    if (state.b_y - World.b_r <= 0) {
+        state.b_dir_radians = std.math.tau - state.b_dir_radians;
+        state.b_y = World.b_r;
+    }
+
+    // reflect off bottom wall
+    if (state.b_y + World.b_r >= World.height) {
+        state.b_dir_radians = std.math.tau - state.b_dir_radians;
+        state.b_y = World.height - World.b_r;
+    }
+
+    // TODO: score
+    if (checkCollisionCircleLine( // left wall
+        .{ .x = state.b_x, .y = state.b_y },
+        World.b_r,
+        .{ .x = 0, .y = 0 },
+        .{ .x = 0, .y = World.height },
+    )) {
+        reset(state);
+    } else if (checkCollisionCircleLine( // right wall
+        .{ .x = state.b_x, .y = state.b_y },
+        World.b_r,
+        .{ .x = World.width, .y = 0 },
+        .{ .x = World.width, .y = World.height },
+    )) {
+        reset(state);
+    }
+
+    // std.debug.print("speed (p/f): {d}\n", .{state.b_pix_per_f});
+    const b_x_movement = @cos(state.b_dir_radians) * state.b_speed;
+    const b_y_movement = @sin(state.b_dir_radians) * state.b_speed;
+
+    state.b_x += b_x_movement;
+    state.b_y -= b_y_movement;
+    entities.append(allocator, .{ .ball = true, .x = state.b_x, .y = state.b_y, .radius = World.b_r }) catch @panic("Failed to allocate");
+
+    out.count = entities.items.len;
+    out.list = entities.items.ptr;
 }
 
 fn paddleCollisionDir(relative_ball_y: f32, ball_dir: f32) f32 {
@@ -278,15 +289,18 @@ fn paddleCollisionDir(relative_ball_y: f32, ball_dir: f32) f32 {
 }
 
 fn paddleCollisionSpeed(relative_ball_y: f32) f32 {
-    return @max(@as(f32, @floatFromInt(ball_max_pix_per_f)) * relative_ball_y, ball_max_pix_per_f / 4);
+    return @max(
+        @as(f32, @floatFromInt(ball_max_units_per_s)) * relative_ball_y,
+        ball_max_units_per_s,
+    );
 }
 
-fn vertDistFromRectCenter(p: Vector2, rect: Rectangle) f32 {
-    return @abs(p.y - (rect.y + (rect.height / 2)));
+fn vertDistFromRectCenter(p: Vector2, rec: Entity) f32 {
+    return @abs(p.y - (rec.y + (rec.height / 2)));
 }
 
-fn relativeYPos(p: Vector2, rect: Rectangle) f32 {
-    const yPos: f32 = vertDistFromRectCenter(p, rect) / rect.height;
+fn relativeYPos(p: Vector2, rec: Entity) f32 {
+    const yPos: f32 = vertDistFromRectCenter(p, rec) / rec.height;
 
     std.debug.assert(yPos < 1.0);
     return yPos;
